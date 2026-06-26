@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FRKN Service Checker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <span class="logo">F</span>
+      <span>FRKN Service Checker</span>
+      <div class="lang-switcher">
+        <button class="lang-btn" data-lang="ru" data-i18n="lang_ru">RU</button>
+        <button class="lang-btn" data-lang="en" data-i18n="lang_en">EN</button>
+      </div>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="network" data-i18n="tab_network">IP/VPN</button>
+      <button class="tab" data-tab="services" data-i18n="tab_services">Сервисы</button>
+      <button class="tab" data-tab="nodes" data-i18n="tab_nodes">Ноды</button>
+      <button class="tab" data-tab="speed" data-i18n="tab_speed">Скорость</button>
+    </nav>
+
+    <div id="tab-network" class="tab-content active">
+      <div id="network-status" data-i18n="status_press_refresh">Нажмите «Обновить»</div>
+      <div id="network-info"></div>
+    </div>
+
+    <div id="tab-services" class="tab-content">
+      <div id="services-status" data-i18n="status_press_refresh">Нажмите «Обновить»</div>
+      <div id="services"></div>
+    </div>
+
+    <div id="tab-nodes" class="tab-content">
+      <div id="nodes-status" data-i18n="status_press_refresh">Нажмите «Обновить»</div>
+      <div id="nodes"></div>
+    </div>
+
+    <div id="tab-speed" class="tab-content">
+      <div id="speed-status" data-i18n="status_press_measure">Нажмите «Измерить»</div>
+      <button id="measure-speed" class="refresh-btn" data-i18n="measure_speed">Измерить скорость</button>
+    </div>
+
+    <button id="refresh" class="refresh-btn" data-i18n="refresh">Обновить</button>
+
+    <footer class="footer">
+      <span data-i18n="footer_powered">powered by</span> <a href="https://frkn.org" target="_blank" rel="noopener noreferrer">FRKN</a>
+    </footer>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

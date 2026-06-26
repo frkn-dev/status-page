@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status Page</title>
+    <meta name="theme-color" content="#0b0d12">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link data-trunk rel="rust" data-bin="status-page" data-type="main" />
+    <link data-trunk rel="copy-file" href="how.html" />
+    <link data-trunk rel="copy-file" href="privacy.html" />
+    <link data-trunk rel="copy-file" href="privacy-en.html" />
+    <link data-trunk rel="copy-file" href="favicon.ico" />
+    <link data-trunk rel="copy-file" href="logo.png" />
+    <link data-trunk rel="copy-dir" href="assets/icons" />
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        frkn: {
+                            bg: '#0b0d12',
+                            card: '#121621',
+                            text: '#e6e8ef',
+                            muted: '#9aa1b2',
+                            accent: '#5b7cfa',
+                            accent2: '#22d3ee',
+                            border: '#1f2433',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --frkn-bg: #0b0d12;
+            --frkn-card: #121621;
+            --frkn-text: #e6e8ef;
+            --frkn-muted: #9aa1b2;
+            --frkn-accent: #5b7cfa;
+            --frkn-accent2: #22d3ee;
+            --frkn-border: #1f2433;
+        }
+        body {
+            background: var(--frkn-bg);
+            color: var(--frkn-text);
+            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .frkn-card {
+            background: linear-gradient(135deg, var(--frkn-card), #1a1f2e);
+            border: 1px solid var(--frkn-border);
+        }
+        .frkn-card:hover {
+            border-color: rgba(91, 124, 250, 0.4);
+            box-shadow: 0 10px 30px rgba(91, 124, 250, 0.1);
+        }
+        .frkn-gradient-text {
+            background: linear-gradient(90deg, var(--frkn-accent), var(--frkn-accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .frkn-gradient-border {
+            position: relative;
+        }
+        .frkn-gradient-border::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--frkn-accent), var(--frkn-accent2));
+            border-radius: 2px 2px 0 0;
+        }
+        .frkn-btn {
+            background: linear-gradient(90deg, var(--frkn-accent), #4f46e5);
+            transition: all 0.25s ease;
+        }
+        .frkn-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(91, 124, 250, 0.3);
+        }
+        .service-icon svg {
+            width: 32px;
+            height: 32px;
+            fill: #e6e8ef !important;
+        }
+        .pulse-dot {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="min-h-screen antialiased">
+    <div id="app"></div>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Как мы измеряем доступность — Status Page</title>
+    <meta name="theme-color" content="#0b0d12">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        frkn: {
+                            bg: '#0b0d12',
+                            card: '#121621',
+                            text: '#e6e8ef',
+                            muted: '#9aa1b2',
+                            accent: '#5b7cfa',
+                            accent2: '#22d3ee',
+                            border: '#1f2433',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --frkn-bg: #0b0d12;
+            --frkn-card: #121621;
+            --frkn-text: #e6e8ef;
+            --frkn-muted: #9aa1b2;
+            --frkn-accent: #5b7cfa;
+            --frkn-accent2: #22d3ee;
+            --frkn-border: #1f2433;
+        }
+        body {
+            background: var(--frkn-bg);
+            color: var(--frkn-text);
+            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .frkn-card {
+            background: linear-gradient(135deg, var(--frkn-card), #1a1f2e);
+            border: 1px solid var(--frkn-border);
+        }
+        .frkn-gradient-text {
+            background: linear-gradient(90deg, var(--frkn-accent), var(--frkn-accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .frkn-gradient-border {
+            position: relative;
+        }
+        .frkn-gradient-border::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--frkn-accent), var(--frkn-accent2));
+            border-radius: 2px 2px 0 0;
+        }
+        .frkn-btn {
+            background: linear-gradient(90deg, var(--frkn-accent), #4f46e5);
+            transition: all 0.25s ease;
+        }
+        .frkn-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(91, 124, 250, 0.3);
+        }
+        .service-icon svg {
+            width: 32px;
+            height: 32px;
+            fill: #e6e8ef !important;
+        }
+        code {
+            background: rgba(91, 124, 250, 0.12);
+            color: var(--frkn-accent2);
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.375rem;
+            font-size: 0.875em;
+        }
+    </style>
+</head>
+<body class="min-h-screen antialiased">
+    <div class="min-h-screen p-4 md:p-8 max-w-4xl mx-auto">
+        <header class="mb-8">
+            <a href="/" class="inline-flex items-center gap-2 text-frkn-muted hover:text-frkn-accent transition mb-4">
+                <span>←</span>
+                <span>Назад к статусу</span>
+            </a>
+            <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">
+                Как мы измеряем доступность
+            </h1>
+            <p class="text-frkn-muted mt-2">
+                Прозрачность о технологиях и методах замеров на этой странице.
+            </p>
+        </header>
+
+        <main class="space-y-6">
+            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
+                <h2 class="text-xl font-bold mb-3">Технологии</h2>
+                <p class="text-frkn-muted mb-4">
+                    Страница работает полностью в браузере, без собственного сервера. Это важно, потому что ограничивает, какие проверки мы можем делать.
+                </p>
+                <ul class="space-y-2 text-frkn-muted">
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span><strong class="text-frkn-text">Rust</strong> — язык, на котором написана логика.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span><strong class="text-frkn-text">WebAssembly (WASM)</strong> — Rust скомпилирован в WASM и выполняется в браузере.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span><strong class="text-frkn-text">Leptos</strong> — реактивный фреймворк для UI на Rust.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span><strong class="text-frkn-text">Tailwind CSS</strong> — стилизация.</span>
+                    </li>
+                </ul>
+            </section>
+
+            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
+                <h2 class="text-xl font-bold mb-3">Доступность сервисов</h2>
+                <p class="text-frkn-muted mb-4">
+                    Проверка доступности сторонних сервисов (YouTube, X/Twitter, Instagram, Telegram и др.) <strong class="text-frkn-text">вынесена в браузерное расширение</strong>. Связано это с тем, что из обычного веб-страницы нельзя корректно отличить настоящий сайт от провайдерской заглушки: браузер не даёт прочитать тело ответа чужого домена без CORS.
+                </p>
+                <p class="text-frkn-muted mb-4">
+                    Расширение работает из браузера пользователя, может читать HTTP-статус и тело ответа, поэтому определяет блокировки и заглушки точнее, чем статус-страница.
+                </p>
+                <p class="text-frkn-muted mb-4">
+                    На этой странице оставлены проверки, которые не требуют чтения чужих ответов:
+                </p>
+                <ul class="space-y-2 text-frkn-muted">
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Определение внешнего IP и VPN.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Статус серверов FRKN и API <code>api.frkn.org</code> (CORS настроен).</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Измерение скорости загрузки файла.</span>
+                    </li>
+                </ul>
+            </section>
+
+            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
+                <h2 class="text-xl font-bold mb-3">Определение VPN</h2>
+                <p class="text-frkn-muted mb-4">
+                    Мы определяем ваш внешний IP, страну и провайдера через публичные геолокационные сервисы: <code>ipapi.co</code>, <code>ipwho.is</code> и fallback на <code>ipinfo.io</code>.
+                </p>
+                <p class="text-frkn-muted mb-4">
+                    VPN считается включённым, если:
+                </p>
+                <ul class="space-y-2 text-frkn-muted">
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Провайдер (организация владельца IP) или ASN похожи на хостинг, дата-центр или VPN-сервис.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Ваш внешний IP совпадает с одним из IP-адресов серверов FRKN, загруженных из <code>https://api.frkn.org/nodes</code>.</span>
+                    </li>
+                </ul>
+            </section>
+
+            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
+                <h2 class="text-xl font-bold mb-3">Серверы FRKN</h2>
+                <p class="text-frkn-muted mb-4">
+                    Страница загружает актуальный список нод с <code>https://api.frkn.org/nodes</code> и параллельно проверяет доступность каждого hostname, а также самого API через тот же endpoint <code>/nodes</code>.
+                </p>
+                <p class="text-frkn-muted mb-4">
+                    Сводный статус может быть:
+                </p>
+                <ul class="space-y-2 text-frkn-muted">
+                    <li class="flex items-start gap-3">
+                        <span class="text-emerald-400 font-bold">•</span>
+                        <span><strong class="text-frkn-text">Все доступны</strong> — все ноды и API отвечают.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-yellow-400 font-bold">•</span>
+                        <span><strong class="text-frkn-text">Частично доступны</strong> — часть нод или API не отвечает.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-rose-400 font-bold">•</span>
+                        <span><strong class="text-frkn-text">Недоступны</strong> — ни одна из проверенных точек не отвечает.</span>
+                    </li>
+                </ul>
+                <p class="text-frkn-muted mt-4">
+                    Если список нод не удалось загрузить (например, из-за отсутствия CORS на стороне API), карточка покажет статус <strong class="text-frkn-text">Не удалось загрузить</strong>.
+                </p>
+            </section>
+
+            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
+                <h2 class="text-xl font-bold mb-3">Измерение скорости</h2>
+                <p class="text-frkn-muted mb-4">
+                    Speed test загружает тестовый бинарный файл фиксированного размера. Мы замеряем время от начала загрузки до получения всех байт и считаем скорость:
+                </p>
+                <div class="bg-frkn-bg/50 rounded-xl p-4 border border-frkn-border font-mono text-sm text-frkn-accent2 mb-4">
+                    Mbps = (размер_файла_в_байтах × 8) / время_в_секундах / 1 000 000
+                </div>
+                <p class="text-frkn-muted">
+                    К URL добавляется уникальный параметр <code>?cb=...</code>, чтобы браузер не брал файл из кэша. Если 10 МБ файл недоступен или слишком медленный, пробуем 1 МБ.
+                </p>
+            </section>
+
+            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
+                <h2 class="text-xl font-bold mb-3">Важные ограничения</h2>
+                <ul class="space-y-2 text-frkn-muted">
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Это не полноценный uptime-мониторинг. Страница показывает состояние из вашего браузера и вашей сети прямо сейчас.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Браузер не умеет ICMP ping. Пинг на этой странице — это HTTP-латентность.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Проверка сторонних сервисов (YouTube, X/Twitter, Instagram и др.) вынесена в браузерное расширение, потому что без CORS нельзя отличить настоящий сайт от заглушки.</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-frkn-accent font-bold">•</span>
+                        <span>Карточка FRKN загружает список нод с <code>api.frkn.org/nodes</code>. Если API не отдаёт CORS-заголовки, список не загрузится.</span>
+                    </li>
+                </ul>
+            </section>
+        </main>
+
+        <footer class="mt-12 text-center text-frkn-muted text-sm pt-8 pb-8 border-t border-frkn-border">
+            <a
+                href="https://frkn.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 hover:text-frkn-accent transition"
+            >
+                powered by <span class="font-bold text-frkn-text">FRKN</span>
+            </a>
+        </footer>
+    </div>
+</body>
+</html>

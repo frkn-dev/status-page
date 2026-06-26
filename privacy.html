@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Политика конфиденциальности — FRKN Service Checker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            frkn: {
+              bg: '#0b0d12',
+              card: '#121621',
+              text: '#e6e8ef',
+              muted: '#9aa1b2',
+              accent: '#5b7cfa',
+              border: '#1f2433',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --frkn-bg: #0b0d12;
+      --frkn-card: #121621;
+      --frkn-text: #e6e8ef;
+      --frkn-muted: #9aa1b2;
+      --frkn-accent: #5b7cfa;
+      --frkn-border: #1f2433;
+    }
+    body {
+      background: var(--frkn-bg);
+      color: var(--frkn-text);
+      font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    }
+    .frkn-card {
+      background: linear-gradient(135deg, var(--frkn-card), #1a1f2e);
+      border: 1px solid var(--frkn-border);
+    }
+    a { color: var(--frkn-accent); }
+    a:hover { color: #22d3ee; }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+  <div class="max-w-3xl mx-auto">
+    <header class="mb-8 flex items-center gap-3">
+      <img src="logo.png" alt="FRKN" class="w-10 h-10 rounded-lg" />
+      <a href="/" class="text-frkn-muted hover:text-frkn-accent transition">← На главную</a>
+    </header>
+
+    <main class="frkn-card rounded-2xl p-6 md:p-8">
+      <h1 class="text-2xl md:text-3xl font-bold mb-4">Политика конфиденциальности</h1>
+      <p class="text-frkn-muted mb-6">Последнее обновление: 26 июня 2026 г.</p>
+
+      <section class="mb-6">
+        <h2 class="text-lg font-semibold mb-2">Что делает расширение</h2>
+        <p class="text-frkn-muted leading-relaxed">
+          <strong>FRKN Service Checker</strong> — это браузерное расширение для проверки доступности популярных сайтов и сервисов,
+          определения внешнего IP-адреса, статуса VPN и скорости интернет-соединения.
+          Все проверки выполняются непосредственно в браузере пользователя.
+        </p>
+      </section>
+
+      <section class="mb-6">
+        <h2 class="text-lg font-semibold mb-2">Какие данные собираются</h2>
+        <p class="text-frkn-muted leading-relaxed mb-3">
+          Расширение <strong>не собирает, не хранит и не передаёт персональные данные</strong> на наши серверы.
+          Единственная информация, которую расширение получает, — это публичные данные, необходимые для работы функций:
+        </p>
+        <ul class="list-disc list-inside text-frkn-muted space-y-1">
+          <li>Внешний IP-адрес, страна, город, провайдер и ASN через публичные сервисы геолокации (<code>ipapi.co</code>, <code>ipwho.is</code>, <code>ipinfo.io</code>).</li>
+          <li>Список нод и статус API FRKN с <code>api.frkn.org</code>.</li>
+          <li>Результаты HEAD/GET-запросов к проверяемым сайтам (только статус доступности и задержка).</li>
+          <li>Для замера скорости загружаются тестовые файлы с <code>status.frkn.org</code> и публичных зеркал.</li>
+        </ul>
+      </section>
+
+      <section class="mb-6">
+        <h2 class="text-lg font-semibold mb-2">Разрешения</h2>
+        <p class="text-frkn-muted leading-relaxed">
+          Расширение запрашивает доступ к <code>&lt;all_urls&gt;</code>, потому что проверяет доступность множества разных сайтов
+          (YouTube, X/Twitter, Instagram, Telegram и других) напрямую из браузера пользователя.
+          Без этого разрешения невозможно корректно отличить настоящий сайт от провайдерской заглушки.
+        </p>
+      </section>
+
+      <section class="mb-6">
+        <h2 class="text-lg font-semibold mb-2">Хранение данных</h2>
+        <p class="text-frkn-muted leading-relaxed">
+          Все результаты проверок отображаются только в интерфейсе расширения и не сохраняются за пределами браузера.
+          Расширение не использует сторонние аналитические сервисы, трекеры и рекламу.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-semibold mb-2">Контакты</h2>
+        <p class="text-frkn-muted leading-relaxed">
+          Если у вас есть вопросы по политике конфиденциальности, напишите нам:
+          <a href="mailto:support@frkn.org" class="underline">support@frkn.org</a>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="text-center text-frkn-muted text-sm pt-8 pb-8">
+      <a href="https://frkn.org" target="_blank" rel="noopener noreferrer" class="hover:text-frkn-accent transition">
+        powered by <span class="font-bold text-frkn-text">FRKN</span>
+      </a>
+    </footer>
+  </div>
+</body>
+</html>
