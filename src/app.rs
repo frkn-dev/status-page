@@ -24,7 +24,7 @@ pub fn App() -> impl IntoView {
 
     // Заменить на реальные ссылки после публикации в сторах.
     const CHROME_STORE_URL: &str = "#";
-    const FIREFOX_STORE_URL: &str = "#";
+    const FIREFOX_STORE_URL: &str = "https://addons.mozilla.org/addon/frkn-service-checker/";
 
     let run_checks = move || {
         set_loading.set(true);
