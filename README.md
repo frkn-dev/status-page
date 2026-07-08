@@ -61,8 +61,8 @@ trunk build --release
 
 В папке `extension/` находится расширение для Chrome и Firefox, которое проверяет доступность популярных сервисов уже из браузера пользователя с чтением HTTP-ответов:
 
+- **Chrome Web Store**: https://chromewebstore.google.com/detail/frkn-service-checker/elngedoofkkabmcnnldncempkklofmkh
 - **Firefox Add-ons**: https://addons.mozilla.org/addon/frkn-service-checker/
-- **Chrome Web Store**: пока на модерации
 
 ```
 extension/

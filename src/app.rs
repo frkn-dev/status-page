@@ -23,7 +23,7 @@ pub fn App() -> impl IntoView {
     let (lang, set_lang) = create_signal(detect_lang());
 
     // Заменить на реальные ссылки после публикации в сторах.
-    const CHROME_STORE_URL: &str = "#";
+    const CHROME_STORE_URL: &str = "https://chromewebstore.google.com/detail/frkn-service-checker/elngedoofkkabmcnnldncempkklofmkh";
     const FIREFOX_STORE_URL: &str = "https://addons.mozilla.org/addon/frkn-service-checker/";
 
     let run_checks = move || {
