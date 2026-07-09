@@ -5,7 +5,7 @@ set -euo pipefail
 # 1. Собирает production-сборку через trunk.
 # 2. Синхронизирует dist/ на сервер в /opt/mirror/status.frkn.org.
 
-REMOTE_HOST="darkmachine2.frkn.org"
+REMOTE_HOST="${1:-darkmachine2.frkn.org}"
 REMOTE_PATH="/opt/mirror/status.frkn.org"
 
 echo "==> Building status-page..."

@@ -431,6 +431,16 @@ pub fn App() -> impl IntoView {
                         {move || t(lang.get(), "footer_powered")} <span class="font-bold text-frkn-text">"FRKN"</span>
                     </a>
                     <span class="hidden sm:inline">"•"</span>
+                    <a
+                        href="https://github.com/frkn-dev/status-page"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-2 hover:text-frkn-accent transition"
+                    >
+                        <img src="icons/github.svg" alt="GitHub" class="w-4 h-4" />
+                        "GitHub"
+                    </a>
+                    <span class="hidden sm:inline">"•"</span>
                     <a href="privacy.html" class="hover:text-frkn-accent transition">{move || t(lang.get(), "privacy_ru")}</a>
                     <a href="privacy-en.html" class="hover:text-frkn-accent transition">{move || t(lang.get(), "privacy_en")}</a>
                 </div>
