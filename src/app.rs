@@ -443,7 +443,7 @@ pub fn App() -> impl IntoView {
                         rel="noopener noreferrer"
                         class="inline-flex items-center gap-2 hover:text-frkn-accent transition"
                     >
-                        {move || t(lang.get(), "footer_powered")} <span class="font-bold text-frkn-text">"FRKN"</span>
+                        {move || t(lang.get(), "footer_powered")} <img src="logo.png" alt="FRKN" class="w-4 h-4 rounded-sm" /> <span class="font-bold text-frkn-text">"FRKN"</span>
                     </a>
                 </div>
             </footer>
