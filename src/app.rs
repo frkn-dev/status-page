@@ -433,9 +433,13 @@ pub fn App() -> impl IntoView {
                             "GitHub"
                         </a>
                         <span class="hidden sm:inline">"•"</span>
-                        <a href="privacy.html" class="hover:text-frkn-accent transition">{move || t(lang.get(), "privacy_ru")}</a>
-                        <span class="hidden sm:inline">"•"</span>
-                        <a href="privacy-en.html" class="hover:text-frkn-accent transition">{move || t(lang.get(), "privacy_en")}</a>
+                        {move || {
+                            if lang.get() == Lang::Ru {
+                                view! { <a href="privacy.html" class="hover:text-frkn-accent transition">{t(lang.get(), "privacy_ru")}</a> }
+                            } else {
+                                view! { <a href="privacy-en.html" class="hover:text-frkn-accent transition">{t(lang.get(), "privacy_en")}</a> }
+                            }
+                        }}
                     </div>
                     <a
                         href="https://frkn.org"
