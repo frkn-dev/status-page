@@ -207,7 +207,7 @@ function detectVpn(info, nodes) {
 }
 
 async function checkFrknPing() {
-  const url = `https://api.frkn.org/nodes?cb=${Date.now()}`;
+  const url = `https://api.frkn.org/healthcheck?cb=${Date.now()}`;
   const start = performance.now();
   try {
     const resp = await fetchWithTimeout(url, { headers: DEFAULT_HEADERS }, 8000);
@@ -224,7 +224,7 @@ async function checkFrknPing() {
 async function fetchFrknNodes() {
   try {
     const resp = await fetchWithTimeout(
-      `https://api.frkn.org/nodes?cb=${Date.now()}`,
+      `https://api.frkn.org/status?cb=${Date.now()}`,
       { headers: DEFAULT_HEADERS },
       10000
     );
@@ -236,7 +236,7 @@ async function fetchFrknNodes() {
   }
 }
 
-function checkInboundPort(hostname, port, timeoutMs = 4000) {
+function checkPort(hostname, port, timeoutMs = 4000) {
   return new Promise((resolve) => {
     const url = `wss://${hostname}:${port}/`;
     const start = performance.now();
@@ -288,29 +288,30 @@ async function checkFrknNodes() {
         }
       } catch (e) {}
 
-      const inbounds = await Promise.all(
-        (node.inbounds || []).map(async (inb) => {
-          const result = await checkInboundPort(node.hostname, inb.port);
+      // /status отдаёт только номера портов, без тегов протоколов.
+      // UDP-порты из браузера не проверить — они почти всегда offline.
+      const ports = await Promise.all(
+        (node.ports || []).map(async (port) => {
+          const result = await checkPort(node.hostname, port);
           return {
-            tag: inb.tag,
-            port: inb.port,
+            port,
             status: result.status,
             latency: result.latency || null,
           };
         })
       );
 
-      // Общий статус ноды = online, если хотя бы один инбаунд доступен
+      // Общий статус ноды = online, если доступен хотя бы один порт
       // или отвечает HTTP/фавикон. Reality-ноды часто не отдают favicon,
-      // поэтому инбаунды — более надёжный критерий.
-      const inboundOnline = inbounds.some((i) => i.status === 'online');
-      if (inboundOnline) {
+      // поэтому порты — более надёжный критерий.
+      const portOnline = ports.some((p) => p.status === 'online');
+      if (portOnline) {
         nodeStatus = 'online';
-        const inLatencies = inbounds
-          .filter((i) => i.latency)
-          .map((i) => i.latency);
-        if (inLatencies.length > 0) {
-          nodeLatency = Math.min(...inLatencies);
+        const pLatencies = ports
+          .filter((p) => p.latency)
+          .map((p) => p.latency);
+        if (pLatencies.length > 0) {
+          nodeLatency = Math.min(...pLatencies);
         }
       }
 
@@ -322,7 +323,7 @@ async function checkFrknNodes() {
         apiStatus: node.status,
         status: nodeStatus,
         latency: nodeLatency,
-        inbounds,
+        ports,
       };
     })
   );
@@ -336,7 +337,7 @@ async function checkFrknNodes() {
     apiStatus: 'API',
     status: api.status,
     latency: api.latency || null,
-    inbounds: [],
+    ports: [],
   });
 
   const total = results.length;

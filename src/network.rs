@@ -43,12 +43,6 @@ impl IpInfo {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FrknInbound {
-    pub tag: String,
-    pub port: u16,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FrknNode {
     pub hostname: String,
     pub address: String,
@@ -56,12 +50,11 @@ pub struct FrknNode {
     pub country: String,
     pub api_status: String,
     pub node_type: String,
-    pub inbounds: Vec<FrknInbound>,
+    pub ports: Vec<u16>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct FrknInboundStatus {
-    pub tag: String,
+pub struct FrknPortStatus {
     pub port: u16,
     pub browser_status: ServiceStatus,
     pub latency_ms: Option<u32>,
@@ -77,7 +70,7 @@ pub struct FrknNodeStatus {
     pub node_type: String,
     pub browser_status: ServiceStatus,
     pub latency_ms: Option<u32>,
-    pub inbounds: Vec<FrknInboundStatus>,
+    pub ports: Vec<FrknPortStatus>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,7 +112,7 @@ impl FrknAggregateStatus {
 }
 
 pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
-    let resp = Request::get("https://api.frkn.org/nodes")
+    let resp = Request::get("https://api.frkn.org/status")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -141,14 +134,10 @@ pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
                 country: n["country"].as_str().unwrap_or("").to_string(),
                 api_status: n["status"].as_str().unwrap_or("Unknown").to_string(),
                 node_type: n["type"].as_str().unwrap_or("").to_string(),
-                inbounds: n["inbounds"].as_array().map(|arr| {
-                    arr.iter().filter_map(|i| {
-                        Some(FrknInbound {
-                            tag: i["tag"].as_str()?.to_string(),
-                            port: i["port"].as_u64()? as u16,
-                        })
-                    }).collect()
-                }).unwrap_or_default(),
+                ports: n["ports"]
+                    .as_array()
+                    .map(|arr| arr.iter().filter_map(|p| p.as_u64().map(|v| v as u16)).collect())
+                    .unwrap_or_default(),
             })
         })
         .collect();
@@ -171,29 +160,29 @@ pub async fn check_frkn_nodes(nodes: &[FrknNode]) -> (FrknAggregateStatus, Vec<F
     let node_futures = checkable_nodes.into_iter().map(|node| async move {
         let url = format!("https://{}/favicon.ico", node.hostname);
         let (favicon_status, favicon_latency) = check_frkn_node(&url).await;
-        let inbound_futures = node.inbounds.iter().map(|inb| async move {
-            let (in_status, in_latency) = check_inbound_port(&node.hostname, inb.port).await;
-            FrknInboundStatus {
-                tag: inb.tag.clone(),
-                port: inb.port,
-                browser_status: in_status,
-                latency_ms: in_latency,
+        let port_futures = node.ports.iter().map(|&port| async move {
+            let (p_status, p_latency) = check_port(&node.hostname, port).await;
+            FrknPortStatus {
+                port,
+                browser_status: p_status,
+                latency_ms: p_latency,
             }
         });
-        let inbounds = join_all(inbound_futures).await;
+        let ports = join_all(port_futures).await;
 
-        // Общий статус ноды = online, если хотя бы один инбаунд доступен
+        // Общий статус ноды = online, если доступен хотя бы один порт
         // или отвечает HTTP/фавикон. Favicon часто не отдаётся на Reality-нодах,
-        // поэтому инбаунды являются более надёжным критерием.
-        let inbound_online = inbounds
+        // поэтому порты являются более надёжным критерием. UDP-порты (AWG)
+        // из браузера не проверить — они почти всегда будут offline.
+        let port_online = ports
             .iter()
-            .any(|i| i.browser_status == ServiceStatus::Online);
-        let (browser_status, latency_ms) = if inbound_online {
-            let in_latency = inbounds
+            .any(|p| p.browser_status == ServiceStatus::Online);
+        let (browser_status, latency_ms) = if port_online {
+            let p_latency = ports
                 .iter()
-                .filter_map(|i| i.latency_ms)
+                .filter_map(|p| p.latency_ms)
                 .min();
-            (ServiceStatus::Online, in_latency.or(favicon_latency))
+            (ServiceStatus::Online, p_latency.or(favicon_latency))
         } else if favicon_status == ServiceStatus::Online {
             (ServiceStatus::Online, favicon_latency)
         } else {
@@ -209,14 +198,14 @@ pub async fn check_frkn_nodes(nodes: &[FrknNode]) -> (FrknAggregateStatus, Vec<F
             node_type: node.node_type.clone(),
             browser_status,
             latency_ms,
-            inbounds,
+            ports,
         }
     });
 
     let mut statuses = join_all(node_futures).await;
 
-    // Проверяем api.frkn.org отдельно через основной endpoint /nodes
-    let api_url = "https://api.frkn.org/nodes";
+    // Проверяем api.frkn.org отдельно через публичный /healthcheck
+    let api_url = "https://api.frkn.org/healthcheck";
     let (api_status, api_latency) = check_frkn_node(api_url).await;
     statuses.push(FrknNodeStatus {
         label: "API".to_string(),
@@ -227,7 +216,7 @@ pub async fn check_frkn_nodes(nodes: &[FrknNode]) -> (FrknAggregateStatus, Vec<F
         node_type: "API".to_string(),
         browser_status: api_status,
         latency_ms: api_latency,
-        inbounds: Vec::new(),
+        ports: Vec::new(),
     });
 
     let online_count = statuses
@@ -256,13 +245,13 @@ async fn check_frkn_node(url: &str) -> (ServiceStatus, Option<u32>) {
     }
 }
 
-/// Проверяет доступность TCP-порта инбаунда из браузера.
+/// Проверяет доступность TCP-порта ноды из браузера.
 /// Из обычной веб-страницы нельзя открыть raw TCP/UDP, поэтому
 /// используем WebSocket handshake (`wss://hostname:port/`). Если порт
 /// открыт и принимает TLS, handshake завершится событием open/error
 /// до таймаута — это означает, что порт достижим. Если порт закрыт
 /// или блокируется, браузер дождётся таймаута.
-async fn check_inbound_port(hostname: &str, port: u16) -> (ServiceStatus, Option<u32>) {
+async fn check_port(hostname: &str, port: u16) -> (ServiceStatus, Option<u32>) {
     let url = format!("wss://{}:{}/", hostname, port);
     let start = now_ms();
     let ws = match web_sys::WebSocket::new(&url) {

@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const metaDiv = document.createElement('div');
       metaDiv.className = 'node-meta';
-      metaDiv.textContent = `${n.country} ${n.address} • API: ${n.apiStatus || t('no_inbounds')}`;
+      metaDiv.textContent = `${n.country} ${n.address} • API: ${n.apiStatus || ''}`;
 
       left.appendChild(nameDiv);
       left.appendChild(metaDiv);
@@ -244,28 +244,28 @@ document.addEventListener('DOMContentLoaded', () => {
       header.appendChild(right);
       div.appendChild(header);
 
-      if (n.inbounds && n.inbounds.length > 0) {
-        const inboundList = document.createElement('div');
-        inboundList.className = 'inbound-list';
+      if (n.ports && n.ports.length > 0) {
+        const portList = document.createElement('div');
+        portList.className = 'port-list';
 
-        n.inbounds.forEach((inb) => {
-          const dotClass = inb.status === 'online' ? 'online' : 'offline';
+        n.ports.forEach((p) => {
+          const dotClass = p.status === 'online' ? 'online' : 'offline';
 
-          const inboundSpan = document.createElement('span');
-          inboundSpan.className = 'inbound';
+          const portSpan = document.createElement('span');
+          portSpan.className = 'port';
 
-          const tagSpan = document.createElement('span');
-          tagSpan.textContent = `${inb.tag}:${inb.port}`;
+          const numSpan = document.createElement('span');
+          numSpan.textContent = `:${p.port}`;
 
           const dot = document.createElement('span');
-          dot.className = `inbound-dot ${dotClass}`;
+          dot.className = `port-dot ${dotClass}`;
 
-          inboundSpan.appendChild(tagSpan);
-          inboundSpan.appendChild(dot);
-          inboundList.appendChild(inboundSpan);
+          portSpan.appendChild(numSpan);
+          portSpan.appendChild(dot);
+          portList.appendChild(portSpan);
         });
 
-        div.appendChild(inboundList);
+        div.appendChild(portList);
       }
 
       nodesEl.appendChild(div);

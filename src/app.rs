@@ -302,6 +302,7 @@ pub fn App() -> impl IntoView {
                         }}
                     </div>
 
+
                     // Expandable server list
                     {move || {
                         if expanded.get() {
@@ -330,17 +331,17 @@ pub fn App() -> impl IntoView {
                                                             {format!("API: {}", node.api_status)}
                                                         </span>
                                                     </div>
-                                                    {if !node.inbounds.is_empty() {
+                                                    {if !node.ports.is_empty() {
                                                         Some(view! {
                                                             <div class="mt-2 flex flex-wrap gap-2">
-                                                                {node.inbounds.into_iter().map(|inb| {
-                                                                    let dot_class = match inb.browser_status {
+                                                                {node.ports.into_iter().map(|p| {
+                                                                    let dot_class = match p.browser_status {
                                                                         ServiceStatus::Online => "bg-emerald-400",
                                                                         _ => "bg-rose-400",
                                                                     };
                                                                     view! {
                                                                         <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-black/20 border border-frkn-border">
-                                                                            <span>{format!("{}:{}", inb.tag, inb.port)}</span>
+                                                                            <span>{format!(":{}", p.port)}</span>
                                                                             <span class={format!("w-2 h-2 rounded-full {}", dot_class)}></span>
                                                                         </span>
                                                                     }

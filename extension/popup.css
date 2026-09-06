@@ -227,14 +227,14 @@ body {
   color: #facc15;
 }
 
-.inbound-list {
+.port-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
 }
 
-.inbound {
+.port {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -245,17 +245,17 @@ body {
   font-size: 11px;
 }
 
-.inbound-dot {
+.port-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
 }
 
-.inbound-dot.online {
+.port-dot.online {
   background: var(--online);
 }
 
-.inbound-dot.offline {
+.port-dot.offline {
   background: var(--offline);
 }
 
