@@ -13,7 +13,7 @@
     }
   },
   "name": "FRKN Service Checker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Проверяет доступность популярных сервисов, IP/VPN и скорость из браузера пользователя",
   "author": "FRKN",
   "homepage_url": "https://status.frkn.org",
