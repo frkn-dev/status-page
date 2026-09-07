@@ -326,7 +326,6 @@ pub fn App() -> impl IntoView {
                                                         </span>
                                                     </div>
                                                     <div class="mt-1 flex items-center flex-wrap gap-2">
-                                                        <span class="text-xs text-frkn-muted">{node.address}</span>
                                                         <span class="text-xs px-1.5 py-0.5 rounded bg-white/5 border border-frkn-border">
                                                             {format!("API: {}", node.api_status)}
                                                         </span>

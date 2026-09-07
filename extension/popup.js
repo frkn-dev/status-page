@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const metaDiv = document.createElement('div');
       metaDiv.className = 'node-meta';
-      metaDiv.textContent = `${n.country} ${n.address} • API: ${n.apiStatus || ''}`;
+      metaDiv.textContent = `${n.country} • API: ${n.apiStatus || ''}`;
 
       left.appendChild(nameDiv);
       left.appendChild(metaDiv);
