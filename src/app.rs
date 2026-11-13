@@ -25,7 +25,7 @@ pub fn App() -> impl IntoView {
     // Per-node speed measurement: results and failures keyed by hostname,
     // the pool currently selected, and who is being measured right now.
     let (bench_results, set_bench_results) = create_signal(HashMap::<String, f64>::new());
-    let (bench_failed, set_bench_failed) = create_signal(HashSet::<String>::new());
+    let (bench_failed, set_bench_failed) = create_signal(HashMap::<String, String>::new());
     // Round-trip latency per node (ms), measured next to the download so the row
     // shows both the path quality and the throughput.
     let (bench_ping, set_bench_ping) = create_signal(HashMap::<String, u32>::new());
@@ -138,9 +138,9 @@ pub fn App() -> impl IntoView {
                         s.remove(&hostname);
                     });
                 }
-                Err(_) => {
+                Err(reason) => {
                     set_bench_failed.update(|s| {
-                        s.insert(hostname.clone());
+                        s.insert(hostname.clone(), reason);
                     });
                 }
             }
@@ -192,9 +192,9 @@ pub fn App() -> impl IntoView {
                             s.remove(&h);
                         });
                     }
-                    Err(_) => {
+                    Err(reason) => {
                         set_bench_failed.update(|s| {
-                            s.insert(h.clone());
+                            s.insert(h.clone(), reason);
                         });
                     }
                 }
@@ -262,7 +262,7 @@ pub fn App() -> impl IntoView {
                                 None => format!("{:.0} {}", v, t(lang_now, "mbps")),
                             });
                             let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
-                            let is_failed = failed.contains(&hn);
+                            let fail_reason = failed.get(&hn).cloned();
                             let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
                             // Some nodes carry the pool name as their label; fall
                             // back to the hostname so rows stay distinguishable.
@@ -273,10 +273,12 @@ pub fn App() -> impl IntoView {
                             };
                             let shown = match value {
                                 Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
-                                None => if is_failed {
-                                    view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
-                                } else {
-                                    view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
+                                None => match fail_reason.as_deref() {
+                                    Some(r) if r.starts_with("http 404") || r.starts_with("http 403") => {
+                                        view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
+                                    }
+                                    Some(_) => view! { <span class="text-xs text-rose-400">{t(lang_now, "no_answer")}</span> }.into_view(),
+                                    None => view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view(),
                                 },
                             };
                             view! {

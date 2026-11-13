@@ -606,15 +606,17 @@ async fn measure_speed_url(url: &str, timeout_ms: u32) -> Result<f64, String> {
     let send_fut = Request::get(url).send();
 
     let resp = match select(Box::pin(send_fut), TimeoutFuture::new(timeout_ms)).await {
-        Either::Left((result, _)) => result.map_err(|e| e.to_string())?,
+        // A failed fetch covers DNS, refused connection and a blocked port alike:
+        // the browser hides which one it was, so the UI says "нет связи".
+        Either::Left((result, _)) => result.map_err(|_| "network".to_string())?,
         Either::Right(_) => return Err("timeout".to_string()),
     };
 
     if !resp.ok() {
-        return Err(format!("HTTP {}", resp.status()));
+        return Err(format!("http {}", resp.status()));
     }
 
-    let bytes = resp.binary().await.map_err(|e| e.to_string())?;
+    let bytes = resp.binary().await.map_err(|_| "body".to_string())?;
     let elapsed_sec = (now_ms() - start) / 1000.0;
     if elapsed_sec <= 0.0 {
         return Err("too fast".to_string());
@@ -674,13 +676,15 @@ fn bench_origin(hostname: &str) -> String {
 /// Measures the user's own path to that node, not a third-party mirror.
 pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
     let ts = now_ms() as u64;
+    let mut last = "timeout".to_string();
     for path in [BENCH_10MB, BENCH_1MB] {
         let url = format!("{}{path}?cb={ts}", bench_origin(hostname));
-        if let Ok(mbps) = measure_speed_url(&url, 10_000).await {
-            return Ok(mbps);
+        match measure_speed_url(&url, 10_000).await {
+            Ok(mbps) => return Ok(mbps),
+            Err(e) => last = e,
         }
     }
-    Err("bench: node does not serve a speedtest file".to_string())
+    Err(last)
 }
 
 /// Round-trip latency from this device to one node's bench endpoint.
