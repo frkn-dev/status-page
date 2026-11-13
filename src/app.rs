@@ -10,6 +10,30 @@ use futures::future::join_all;
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 
+/// What a measured speed is good enough for. Thresholds follow what the
+/// services themselves need: 4K ~50 Mbps per stream, HD ~10-25, and anything
+/// under 10 is browsing/messaging only.
+fn quality_key(mbps: f64) -> &'static str {
+    if mbps >= 150.0 {
+        "q_4k_multi"
+    } else if mbps >= 50.0 {
+        "q_great_4k"
+    } else if mbps >= 25.0 {
+        "q_good_4k"
+    } else if mbps >= 10.0 {
+        "q_great_hd"
+    } else if mbps >= 5.0 {
+        "q_good_hd"
+    } else {
+        "q_basic"
+    }
+}
+
+/// Gaming is latency-bound, not bandwidth-bound: under ~60 ms feels fine.
+fn gaming_ok(ping_ms: Option<u32>) -> bool {
+    ping_ms.is_some_and(|p| p <= 60)
+}
+
 /// Is this node part of the run that is happening right now?
 fn busy_all_or_node(busy: Option<String>, hostname: &str) -> bool {
     matches!(busy.as_deref(), Some("__all") | Some("__pool")) || busy.as_deref() == Some(hostname)
@@ -285,6 +309,7 @@ pub fn App() -> impl IntoView {
                             } else {
                                 node.label.clone()
                             };
+                            let quality = results.get(&hn).map(|v| t(lang_now, quality_key(*v)));
                             let shown = match value {
                                 Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
                                 None => match fail_reason.as_deref() {
@@ -310,6 +335,12 @@ pub fn App() -> impl IntoView {
                                     </div>
                                     <div class="flex items-center gap-2 shrink-0">
                                         {shown}
+                                        {quality.map(|q| view! {
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-frkn-border text-frkn-muted whitespace-nowrap">{q}</span>
+                                        })}
+                                        {if gaming_ok(ping) {
+                                            Some(view! { <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 whitespace-nowrap">{t(lang_now, "q_gaming")}</span> })
+                                        } else { None }}
                                         <button
                                             on:click=move |_| bench_one(hn_btn.clone())
                                             disabled=row_busy
@@ -470,9 +501,12 @@ pub fn App() -> impl IntoView {
                                 view! { <div class="text-rose-400">{t(lang.get(), "speed_failed")}</div> }
                             } else {
                                 view! {
-                                    <div class="flex items-baseline gap-2">
-                                        <span class="text-4xl font-extrabold frkn-gradient-text">{format!("{:.1}", mbps)}</span>
-                                        <span class="text-frkn-muted font-medium">{t(lang.get(), "mbps")}</span>
+                                    <div>
+                                        <div class="flex items-baseline gap-2">
+                                            <span class="text-4xl font-extrabold frkn-gradient-text">{format!("{:.1}", mbps)}</span>
+                                            <span class="text-frkn-muted font-medium">{t(lang.get(), "mbps")}</span>
+                                        </div>
+                                        <div class="mt-1 text-xs text-frkn-muted">{t(lang.get(), quality_key(mbps))}</div>
                                     </div>
                                 }
                             }
