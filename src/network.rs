@@ -649,6 +649,7 @@ pub fn pool_title(pool: &str, translation: Option<&BTreeMap<String, String>>, la
 
 /// Median of the measured speeds. `None` when nothing was measured, so the UI
 /// can say "измерилось 0 из N" instead of inventing a zero.
+#[allow(dead_code)]
 pub fn median(values: &[f64]) -> Option<f64> {
     let mut v: Vec<f64> = values.iter().copied().filter(|x| x.is_finite() && *x > 0.0).collect();
     if v.is_empty() {

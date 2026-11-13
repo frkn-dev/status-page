@@ -1,9 +1,9 @@
 use crate::i18n::{detect_lang, save_lang, t, Lang};
 use crate::network::{
     check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_node_speed,
-    measure_node_ping, measure_speed, median, pool_title, FrknAggregateStatus, FrknNodeStatus, IpInfo,
+    measure_node_ping, measure_speed, pool_title, FrknAggregateStatus, FrknNodeStatus, IpInfo,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use crate::services::ServiceStatus;
 use leptos::*;
 use futures::future::join_all;
@@ -291,15 +291,7 @@ pub fn App() -> impl IntoView {
                     .filter(|n| n.pool.as_deref() == Some(pid.as_str()))
                     .cloned()
                     .collect();
-                let measured: Vec<f64> = in_pool
-                    .iter()
-                    .filter_map(|n| results.get(&n.hostname).copied())
-                    .collect();
-                let med = median(&measured);
-                let med_txt = match med {
-                    Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
-                    None => "—".to_string(),
-                };
+                let online = in_pool.iter().filter(|n| n.api_status == "Online").count();
                 let is_active = *pid == selected;
                 let class = if is_active {
                     "px-3 py-1.5 rounded-full text-xs font-semibold bg-frkn-accent/25 border border-frkn-accent/50 text-white"
@@ -309,7 +301,7 @@ pub fn App() -> impl IntoView {
                 view! {
                     <button on:click=move |_| set_bench_pool.set(Some(pid_click.clone())) class=class>
                         <span>{title.clone()}</span>
-                        <span class="ml-2 opacity-70">{med_txt}</span>
+                        <span class="ml-2 opacity-60">{format!("{}", online)}</span>
                     </button>
                 }
             })
@@ -325,10 +317,6 @@ pub fn App() -> impl IntoView {
             .iter()
             .filter_map(|n| results.get(&n.hostname).copied())
             .collect();
-        let med_txt = match median(&measured) {
-            Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
-            None => "—".to_string(),
-        };
         let unreachable = in_pool
             .iter()
             .filter(|n| n.api_status == "Online")
@@ -338,8 +326,7 @@ pub fn App() -> impl IntoView {
                     .is_some_and(|r| !r.starts_with("http 404") && !r.starts_with("http 403"))
             })
             .count();
-        let mut summary = t(lang_now, "pool_median")
-            .replace("{mbps}", &med_txt)
+        let mut summary = t(lang_now, "pool_measured")
             .replace("{n}", &measured.len().to_string())
             .replace("{m}", &in_pool.len().to_string());
         if unreachable > 0 {
