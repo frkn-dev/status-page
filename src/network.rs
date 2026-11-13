@@ -576,7 +576,7 @@ pub async fn measure_speed() -> Result<f64, String> {
     ];
 
     for url in urls_10mb {
-        if let Ok(speed) = measure_speed_url(&url, 15_000).await {
+        if let Ok((speed, _)) = measure_speed_url(&url, 15_000).await {
             return Ok(speed);
         }
     }
@@ -589,7 +589,7 @@ pub async fn measure_speed() -> Result<f64, String> {
     ];
 
     for url in urls_1mb {
-        if let Ok(speed) = measure_speed_url(&url, 15_000).await {
+        if let Ok((speed, _)) = measure_speed_url(&url, 15_000).await {
             return Ok(speed);
         }
     }
@@ -597,7 +597,7 @@ pub async fn measure_speed() -> Result<f64, String> {
     Err("Не удалось измерить скорость ни на одном из зеркал".to_string())
 }
 
-async fn measure_speed_url(url: &str, timeout_ms: u32) -> Result<f64, String> {
+async fn measure_speed_url(url: &str, timeout_ms: u32) -> Result<(f64, f64), String> {
     let start = now_ms();
 
     // Не добавляем кастомные заголовки, иначе браузер делает CORS-preflight,
@@ -624,7 +624,7 @@ async fn measure_speed_url(url: &str, timeout_ms: u32) -> Result<f64, String> {
 
     let bits = (bytes.len() as f64) * 8.0;
     let mbps = bits / elapsed_sec / 1_000_000.0;
-    Ok(mbps)
+    Ok((mbps, (now_ms() - start)))
 }
 
 /// Bench path a node is expected to serve for per-node speed measurement.
@@ -676,15 +676,20 @@ fn bench_origin(hostname: &str) -> String {
 /// Measures the user's own path to that node, not a third-party mirror.
 pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
     let ts = now_ms() as u64;
-    let mut last = "timeout".to_string();
-    for path in [BENCH_10MB, BENCH_1MB] {
-        let url = format!("{}{path}?cb={ts}", bench_origin(hostname));
-        match measure_speed_url(&url, 10_000).await {
-            Ok(mbps) => return Ok(mbps),
-            Err(e) => last = e,
+    let origin = bench_origin(hostname);
+    // Probe with 1 MB: a 10 MB body times out on slow links and only doubles the
+    // wait. Switch to 10 MB only when 1 MB arrived fast enough for the bigger
+    // sample to be accurate instead of just slow.
+    let (small_mbps, small_ms) =
+        measure_speed_url(&format!("{origin}{BENCH_1MB}?cb={ts}"), 6_000).await?;
+    if small_ms < 900.0 {
+        if let Ok((big_mbps, _)) =
+            measure_speed_url(&format!("{origin}{BENCH_10MB}?cb={ts}"), 12_000).await
+        {
+            return Ok(big_mbps);
         }
     }
-    Err(last)
+    Ok(small_mbps)
 }
 
 /// Round-trip latency from this device to one node's bench endpoint.
@@ -692,12 +697,26 @@ pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
 /// Uses the 1-byte `ping.txt` (a plain GET — a Range header would force a CORS
 /// preflight and double the measured time). Returns milliseconds.
 pub async fn measure_node_ping(hostname: &str) -> Option<u32> {
-    let url = format!("{}/speedtest/ping.txt?cb={}", bench_origin(hostname), now_ms() as u64);
-    let start = now_ms();
-    let res = gloo_net::http::Request::get(&url).send().await.ok()?;
+    let origin = bench_origin(hostname);
+    // The first request pays DNS + TCP + TLS (3-4 round trips) and reads as a
+    // 300 ms "ping" on a 70 ms path. Warm the connection up, then take the best
+    // of three keep-alive round trips — that is the number people expect.
+    let warm = format!("{origin}/speedtest/ping.txt?warm=1");
+    let res = gloo_net::http::Request::get(&warm).send().await.ok()?;
     if !res.ok() {
         return None;
     }
-    res.binary().await.ok()?;
-    Some((now_ms() - start).max(0.0) as u32)
+    let _ = res.binary().await.ok()?;
+    let mut best = u32::MAX;
+    for i in 0..3 {
+        let url = format!("{origin}/speedtest/ping.txt?cb={}-{}", now_ms() as u64, i);
+        let start = now_ms();
+        let res = gloo_net::http::Request::get(&url).send().await.ok()?;
+        if !res.ok() {
+            return None;
+        }
+        let _ = res.binary().await.ok()?;
+        best = best.min((now_ms() - start).max(0.0) as u32);
+    }
+    (best != u32::MAX).then_some(best)
 }

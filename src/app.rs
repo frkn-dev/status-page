@@ -6,8 +6,14 @@ use crate::network::{
 use std::collections::{HashMap, HashSet};
 use crate::services::ServiceStatus;
 use leptos::*;
+use futures::future::join_all;
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
+
+/// Is this node part of the run that is happening right now?
+fn busy_all_or_node(busy: Option<String>, hostname: &str) -> bool {
+    matches!(busy.as_deref(), Some("__all") | Some("__pool")) || busy.as_deref() == Some(hostname)
+}
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -177,27 +183,35 @@ pub fn App() -> impl IntoView {
                 set_bench_busy.set(None);
                 return;
             }
-            for h in hostnames {
-                if let Some(ms) = measure_node_ping(&h).await {
-                    set_bench_ping.update(|m| {
-                        m.insert(h.clone(), ms);
-                    });
-                }
-                match measure_node_speed(&h).await {
-                    Ok(mbps) => {
-                        set_bench_results.update(|m| {
-                            m.insert(h.clone(), mbps);
-                        });
-                        set_bench_failed.update(|s| {
-                            s.remove(&h);
-                        });
+            // Three nodes at a time: sequential measurement made a full run look
+            // hung (each node can burn 6+12 s on a dead path).
+            for chunk in hostnames.chunks(3) {
+                let tasks = chunk.iter().map(|h| {
+                    let h = h.clone();
+                    async move {
+                        if let Some(ms) = measure_node_ping(&h).await {
+                            set_bench_ping.update(|m| {
+                                m.insert(h.clone(), ms);
+                            });
+                        }
+                        match measure_node_speed(&h).await {
+                            Ok(mbps) => {
+                                set_bench_results.update(|m| {
+                                    m.insert(h.clone(), mbps);
+                                });
+                                set_bench_failed.update(|s| {
+                                    s.remove(&h);
+                                });
+                            }
+                            Err(reason) => {
+                                set_bench_failed.update(|s| {
+                                    s.insert(h.clone(), reason);
+                                });
+                            }
+                        }
                     }
-                    Err(reason) => {
-                        set_bench_failed.update(|s| {
-                            s.insert(h.clone(), reason);
-                        });
-                    }
-                }
+                });
+                join_all(tasks).await;
             }
             set_bench_busy.set(None);
         });
@@ -278,7 +292,13 @@ pub fn App() -> impl IntoView {
                                         view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
                                     }
                                     Some(_) => view! { <span class="text-xs text-rose-400">{t(lang_now, "no_answer")}</span> }.into_view(),
-                                    None => view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view(),
+                                    None => if node.browser_status == ServiceStatus::Online
+                                        && busy_all_or_node(bench_busy.get(), &hn)
+                                    {
+                                        view! { <span class="text-xs text-frkn-accent">"…"</span> }.into_view()
+                                    } else {
+                                        view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
+                                    },
                                 },
                             };
                             view! {
