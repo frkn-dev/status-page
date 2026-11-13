@@ -165,7 +165,7 @@ pub fn App() -> impl IntoView {
                 frkn_nodes
                     .get_untracked()
                     .into_iter()
-                    .filter(|n| n.pool.is_some() && n.browser_status == ServiceStatus::Online)
+                    .filter(|n| n.pool.is_some() && n.api_status == "Online")
                     .filter(|n| scope_all || n.pool == pool)
                     .map(|n| n.hostname)
                     .collect()
@@ -292,7 +292,7 @@ pub fn App() -> impl IntoView {
                                         view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
                                     }
                                     Some(_) => view! { <span class="text-xs text-rose-400">{t(lang_now, "no_answer")}</span> }.into_view(),
-                                    None => if node.browser_status == ServiceStatus::Online
+                                    None => if node.api_status == "Online"
                                         && busy_all_or_node(bench_busy.get(), &hn)
                                     {
                                         view! { <span class="text-xs text-frkn-accent">"…"</span> }.into_view()
