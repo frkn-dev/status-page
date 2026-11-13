@@ -15,6 +15,10 @@ use wasm_bindgen_futures::spawn_local;
 /// under 10 is browsing/messaging only.
 fn quality_key(mbps: f64) -> &'static str {
     if mbps >= 150.0 {
+        "q_8k_multi"
+    } else if mbps >= 100.0 {
+        "q_8k"
+    } else if mbps >= 80.0 {
         "q_4k_multi"
     } else if mbps >= 50.0 {
         "q_great_4k"
