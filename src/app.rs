@@ -511,6 +511,31 @@ pub fn App() -> impl IntoView {
                             {move || if is_speed_testing.get() { t(lang.get(), "measuring").to_string() } else { t(lang.get(), "measure_speed").to_string() }}
                         </button>
                     </div>
+                    // Measuring through the tunnel says little about the raw
+                    // channel: say it before the numbers are taken, not after.
+                    {move || {
+                        if !is_vpn.get() {
+                            return None;
+                        }
+                        let ip = ip_info.get().map(|i| i.ip).unwrap_or_default();
+                        let via = frkn_nodes
+                            .get()
+                            .into_iter()
+                            .find(|n| n.address == ip)
+                            .map(|n| n.label)
+                            .unwrap_or(ip);
+                        let lang_now = lang.get();
+                        let text = if is_frkn_vpn.get() {
+                            t(lang_now, "vpn_warn_frkn").replace("{node}", &via)
+                        } else {
+                            t(lang_now, "vpn_warn_other").to_string()
+                        };
+                        Some(view! {
+                            <div class="mb-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-xs leading-relaxed">
+                                {text}
+                            </div>
+                        })
+                    }}
                     {move || {
                         if is_speed_testing.get() {
                             view! { <div class="text-frkn-muted">{t(lang.get(), "measuring")}</div> }
