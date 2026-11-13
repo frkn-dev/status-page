@@ -31,6 +31,8 @@ pub fn App() -> impl IntoView {
     let (bench_ping, set_bench_ping) = create_signal(HashMap::<String, u32>::new());
     let (bench_pool, set_bench_pool) = create_signal(Option::<String>::None);
     let (bench_busy, set_bench_busy) = create_signal(Option::<String>::None);
+    // One speed card: summary by default, per-pool/per-node detail on demand.
+    let (details_open, set_details_open) = create_signal(false);
     let (lang, set_lang) = create_signal(detect_lang());
 
     // Заменить на реальные ссылки после публикации в сторах.
@@ -207,6 +209,132 @@ pub fn App() -> impl IntoView {
         bench_pool_run(None);
     };
 
+    let pools_block = move || -> Option<View> {
+                let nodes = frkn_nodes.get();
+                let lang_now = lang.get();
+                let mut pools: Vec<(String, String)> = Vec::new();
+                for n in &nodes {
+                    if let Some(pid) = &n.pool {
+                        if !pools.iter().any(|(id, _)| id == pid) {
+                            let title = pool_title(pid, n.pool_translation.as_ref(), lang_now);
+                            pools.push((pid.clone(), title));
+                        }
+                    }
+                }
+                pools.sort_by(|a, b| a.1.cmp(&b.1));
+                if pools.is_empty() {
+                    return None;
+                }
+                let results = bench_results.get();
+                let failed = bench_failed.get();
+                let busy = bench_busy.get();
+                let open = bench_pool.get();
+                let all_busy = busy.as_deref() == Some("__all");
+                let rows = pools.into_iter().map(|(pid, title)| {
+                    let in_pool: Vec<FrknNodeStatus> = nodes
+                        .iter()
+                        .filter(|n| n.pool.as_deref() == Some(pid.as_str()))
+                        .cloned()
+                        .collect();
+                    let measured: Vec<f64> = in_pool
+                        .iter()
+                        .filter_map(|n| results.get(&n.hostname).copied())
+                        .collect();
+                    let med_txt = match median(&measured) {
+                        Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
+                        None => "—".to_string(),
+                    };
+                    let summary = t(lang_now, "pool_median")
+                        .replace("{mbps}", &med_txt)
+                        .replace("{n}", &measured.len().to_string())
+                        .replace("{m}", &in_pool.len().to_string());
+                    let is_open = open.as_deref() == Some(pid.as_str());
+                    let pid_toggle = pid.clone();
+                    let pid_measure = pid.clone();
+                    let pool_busy = busy.as_deref() == Some("__pool");
+                    let detail = if is_open {
+                        let items = in_pool.into_iter().map(|node| {
+                            let hn = node.hostname.clone();
+                            let hn_btn = node.hostname.clone();
+                            let ping = bench_ping.get().get(&hn).copied();
+                            let value = results.get(&hn).map(|v| match ping {
+                                Some(ms) => format!("{:.0} {} · {} ms", v, t(lang_now, "mbps"), ms),
+                                None => format!("{:.0} {}", v, t(lang_now, "mbps")),
+                            });
+                            let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
+                            let is_failed = failed.contains(&hn);
+                            let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
+                            // Some nodes carry the pool name as their label; fall
+                            // back to the hostname so rows stay distinguishable.
+                            let row_name = if node.label.trim() == title.trim() || node.label.is_empty() {
+                                node.hostname.clone()
+                            } else {
+                                node.label.clone()
+                            };
+                            let shown = match value {
+                                Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
+                                None => if is_failed {
+                                    view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
+                                } else {
+                                    view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
+                                },
+                            };
+                            view! {
+                                <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/20 border border-frkn-border">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="text-sm truncate">{row_name}</span>
+                                        <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
+                                        <span class="text-xs text-frkn-muted shrink-0">{node.api_status}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        {shown}
+                                        <button
+                                            on:click=move |_| bench_one(hn_btn.clone())
+                                            disabled=row_busy
+                                            class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                                        >
+                                            {if row_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }).collect_view();
+                        Some(view! { <div class="mt-2 space-y-2">{items}</div> })
+                    } else {
+                        None
+                    };
+                    view! {
+                        <div class="rounded-xl bg-white/[0.03] border border-frkn-border">
+                            <div class="flex items-center justify-between gap-2 p-3">
+                                <button
+                                    on:click=move |_| set_bench_pool.set(if is_open { None } else { Some(pid_toggle.clone()) })
+                                    class="flex items-center gap-2 min-w-0 text-left"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                                        class={if is_open { "w-4 h-4 shrink-0 rotate-90 transition-transform" } else { "w-4 h-4 shrink-0 transition-transform" }}>
+                                        <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                                    </svg>
+                                    <span class="text-sm font-semibold truncate">{title}</span>
+                                </button>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <span class="text-xs text-frkn-muted">{summary}</span>
+                                    <button
+                                        on:click=move |_| bench_pool_run(Some(pid_measure.clone()))
+                                        disabled=pool_busy || all_busy
+                                        class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                                    >
+                                        {if pool_busy || all_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
+                                    </button>
+                                </div>
+                            </div>
+                            {detail}
+                        </div>
+                    }
+                }).collect_view();
+        Some(view! { <div class="space-y-2 mt-3">{rows}</div> }.into_view())
+    };
+
+
     view! {
         <div class="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
             // Header
@@ -330,6 +458,22 @@ pub fn App() -> impl IntoView {
                             view! { <div class="text-frkn-muted">{t(lang.get(), "speed_prompt")}</div> }
                         }
                     }}
+                    // Pools live in the same card: collapsed shows the summary,
+                    // expanded shows every pool with its nodes.
+                    <div class="mt-3 flex items-center justify-between gap-2 flex-wrap border-t border-frkn-border pt-3">
+                        <span class="text-xs text-frkn-muted">{move || t(lang.get(), "pools_title")}</span>
+                        <button
+                            on:click=move |_| set_details_open.set(!details_open.get())
+                            class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40"
+                        >
+                            {move || if details_open.get() { t(lang.get(), "hide").to_string() } else { t(lang.get(), "details").to_string() }}
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                                class={move || format!("w-4 h-4 transition-transform {}", if details_open.get() { "rotate-180" } else { "" })}>
+                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                    {move || if details_open.get() { pools_block() } else { None }}
                 </div>
             </section>
             // FRKN servers card
@@ -478,140 +622,6 @@ pub fn App() -> impl IntoView {
                     }}
                 </div>
             </section>
-
-            // Speed by pool: one run covers every bench node, each pool row
-            // opens into its own per-node breakdown (medias over answered nodes).
-            {move || {
-                let nodes = frkn_nodes.get();
-                let lang_now = lang.get();
-                let mut pools: Vec<(String, String)> = Vec::new();
-                for n in &nodes {
-                    if let Some(pid) = &n.pool {
-                        if !pools.iter().any(|(id, _)| id == pid) {
-                            let title = pool_title(pid, n.pool_translation.as_ref(), lang_now);
-                            pools.push((pid.clone(), title));
-                        }
-                    }
-                }
-                pools.sort_by(|a, b| a.1.cmp(&b.1));
-                if pools.is_empty() {
-                    return None;
-                }
-                let results = bench_results.get();
-                let failed = bench_failed.get();
-                let busy = bench_busy.get();
-                let open = bench_pool.get();
-                let all_busy = busy.as_deref() == Some("__all");
-                let rows = pools.into_iter().map(|(pid, title)| {
-                    let in_pool: Vec<FrknNodeStatus> = nodes
-                        .iter()
-                        .filter(|n| n.pool.as_deref() == Some(pid.as_str()))
-                        .cloned()
-                        .collect();
-                    let measured: Vec<f64> = in_pool
-                        .iter()
-                        .filter_map(|n| results.get(&n.hostname).copied())
-                        .collect();
-                    let med_txt = match median(&measured) {
-                        Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
-                        None => "—".to_string(),
-                    };
-                    let summary = t(lang_now, "pool_median")
-                        .replace("{mbps}", &med_txt)
-                        .replace("{n}", &measured.len().to_string())
-                        .replace("{m}", &in_pool.len().to_string());
-                    let is_open = open.as_deref() == Some(pid.as_str());
-                    let pid_toggle = pid.clone();
-                    let pid_measure = pid.clone();
-                    let pool_busy = busy.as_deref() == Some("__pool");
-                    let detail = if is_open {
-                        let items = in_pool.into_iter().map(|node| {
-                            let hn = node.hostname.clone();
-                            let hn_btn = node.hostname.clone();
-                            let ping = bench_ping.get().get(&hn).copied();
-                            let value = results.get(&hn).map(|v| match ping {
-                                Some(ms) => format!("{:.0} {} · {} ms", v, t(lang_now, "mbps"), ms),
-                                None => format!("{:.0} {}", v, t(lang_now, "mbps")),
-                            });
-                            let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
-                            let is_failed = failed.contains(&hn);
-                            let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
-                            // Some nodes carry the pool name as their label; fall
-                            // back to the hostname so rows stay distinguishable.
-                            let row_name = if node.label.trim() == title.trim() || node.label.is_empty() {
-                                node.hostname.clone()
-                            } else {
-                                node.label.clone()
-                            };
-                            let shown = match value {
-                                Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
-                                None => if is_failed {
-                                    view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
-                                } else {
-                                    view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
-                                },
-                            };
-                            view! {
-                                <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/20 border border-frkn-border">
-                                    <div class="flex items-center gap-2 min-w-0">
-                                        <span class="text-sm truncate">{row_name}</span>
-                                        <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
-                                        <span class="text-xs text-frkn-muted shrink-0">{node.api_status}</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 shrink-0">
-                                        {shown}
-                                        <button
-                                            on:click=move |_| bench_one(hn_btn.clone())
-                                            disabled=row_busy
-                                            class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
-                                        >
-                                            {if row_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
-                                        </button>
-                                    </div>
-                                </div>
-                            }
-                        }).collect_view();
-                        Some(view! { <div class="mt-2 space-y-2">{items}</div> })
-                    } else {
-                        None
-                    };
-                    view! {
-                        <div class="rounded-xl bg-white/[0.03] border border-frkn-border">
-                            <div class="flex items-center justify-between gap-2 p-3">
-                                <button
-                                    on:click=move |_| set_bench_pool.set(if is_open { None } else { Some(pid_toggle.clone()) })
-                                    class="flex items-center gap-2 min-w-0 text-left"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-                                        class={if is_open { "w-4 h-4 shrink-0 rotate-90 transition-transform" } else { "w-4 h-4 shrink-0 transition-transform" }}>
-                                        <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
-                                    </svg>
-                                    <span class="text-sm font-semibold truncate">{title}</span>
-                                </button>
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <span class="text-xs text-frkn-muted">{summary}</span>
-                                    <button
-                                        on:click=move |_| bench_pool_run(Some(pid_measure.clone()))
-                                        disabled=pool_busy || all_busy
-                                        class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
-                                    >
-                                        {if pool_busy || all_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
-                                    </button>
-                                </div>
-                            </div>
-                            {detail}
-                        </div>
-                    }
-                }).collect_view();
-                Some(view! {
-                    <section class="mb-8">
-                        <div class="frkn-card frkn-gradient-border rounded-2xl p-5">
-                            <h3 class="text-lg font-bold mb-1">{t(lang_now, "pools_title")}</h3>
-                            <div class="space-y-2 mt-3">{rows}</div>
-                        </div>
-                    </section>
-                })
-            }}
 
             // Error
             {move || error.get().map(|e| view! {
