@@ -11,6 +11,7 @@ use wasm_bindgen_futures::spawn_local;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::Performance;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -51,6 +52,10 @@ pub struct FrknNode {
     pub api_status: String,
     pub node_type: String,
     pub ports: Vec<u16>,
+    /// Pool identifier straight from the node config (`[node] pool`), verbatim.
+    pub pool: Option<String>,
+    /// Localized pool titles (`[node] pool_translation`), lang -> title.
+    pub pool_translation: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -71,6 +76,8 @@ pub struct FrknNodeStatus {
     pub browser_status: ServiceStatus,
     pub latency_ms: Option<u32>,
     pub ports: Vec<FrknPortStatus>,
+    pub pool: Option<String>,
+    pub pool_translation: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -138,6 +145,12 @@ pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
                     .as_array()
                     .map(|arr| arr.iter().filter_map(|p| p.as_u64().map(|v| v as u16)).collect())
                     .unwrap_or_default(),
+                pool: n["pool"].as_str().map(str::to_string),
+                pool_translation: n["pool_translation"].as_object().map(|m| {
+                    m.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|t| (k.clone(), t.to_string())))
+                        .collect()
+                }),
             })
         })
         .collect();
@@ -199,6 +212,8 @@ pub async fn check_frkn_nodes(nodes: &[FrknNode]) -> (FrknAggregateStatus, Vec<F
             browser_status,
             latency_ms,
             ports,
+            pool: node.pool.clone(),
+            pool_translation: node.pool_translation.clone(),
         }
     });
 
@@ -217,6 +232,8 @@ pub async fn check_frkn_nodes(nodes: &[FrknNode]) -> (FrknAggregateStatus, Vec<F
         browser_status: api_status,
         latency_ms: api_latency,
         ports: Vec::new(),
+        pool: None,
+        pool_translation: None,
     });
 
     let online_count = statuses
@@ -608,3 +625,60 @@ async fn measure_speed_url(url: &str, timeout_ms: u32) -> Result<f64, String> {
     Ok(mbps)
 }
 
+/// Bench path a node is expected to serve for per-node speed measurement.
+/// Same convention as the files on status.frkn.org: an nginx/web root with
+/// `Access-Control-Allow-Origin: *`, `Cache-Control: no-store` and a 10 MB
+/// (fallback 1 MB) non-compressible payload.
+const BENCH_10MB: &str = "/speedtest/10mb.test";
+const BENCH_1MB: &str = "/speedtest/1mb.test";
+
+/// Title of a pool for the active language: the translation when the node
+/// carries one, otherwise the pool id verbatim (the id is the contract).
+pub fn pool_title(pool: &str, translation: Option<&BTreeMap<String, String>>, lang: Lang) -> String {
+    let code = match lang {
+        Lang::Ru => "ru",
+        Lang::En => "en",
+    };
+    translation
+        .and_then(|m| m.get(code))
+        .cloned()
+        .unwrap_or_else(|| pool.to_string())
+}
+
+/// Median of the measured speeds. `None` when nothing was measured, so the UI
+/// can say "измерилось 0 из N" instead of inventing a zero.
+pub fn median(values: &[f64]) -> Option<f64> {
+    let mut v: Vec<f64> = values.iter().copied().filter(|x| x.is_finite() && *x > 0.0).collect();
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = v.len() / 2;
+    Some(if v.len() % 2 == 0 { (v[mid - 1] + v[mid]) / 2.0 } else { v[mid] })
+}
+
+/// Per-node bench origin: `<node>.bench.beacon.frkn.org` on the dedicated bench
+/// port, where `<node>` is the first label of the node hostname (`eu01.frkn.org`
+/// -> `eu01.bench.beacon.frkn.org`). Only pool nodes get a name, so a duplicate
+/// label across the fleet cannot collide; the wildcard cert
+/// `*.bench.beacon.frkn.org` covers every node.
+const BENCH_PORT: u16 = 19443;
+const BENCH_DOMAIN: &str = "bench.beacon.frkn.org";
+
+fn bench_origin(hostname: &str) -> String {
+    let label = hostname.split('.').next().unwrap_or(hostname);
+    format!("https://{label}.{BENCH_DOMAIN}:{BENCH_PORT}")
+}
+
+/// Speed from THIS device to one node, downloading its bench file directly.
+/// Measures the user's own path to that node, not a third-party mirror.
+pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
+    let ts = now_ms() as u64;
+    for path in [BENCH_10MB, BENCH_1MB] {
+        let url = format!("{}{path}?cb={ts}", bench_origin(hostname));
+        if let Ok(mbps) = measure_speed_url(&url, 10_000).await {
+            return Ok(mbps);
+        }
+    }
+    Err("bench: node does not serve a speedtest file".to_string())
+}

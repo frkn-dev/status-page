@@ -1,8 +1,9 @@
 use crate::i18n::{detect_lang, save_lang, t, Lang};
 use crate::network::{
-    check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_speed,
-    FrknAggregateStatus, FrknNodeStatus, IpInfo,
+    check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_node_speed,
+    measure_speed, median, pool_title, FrknAggregateStatus, FrknNodeStatus, IpInfo,
 };
+use std::collections::{HashMap, HashSet};
 use crate::services::ServiceStatus;
 use leptos::*;
 use wasm_bindgen_futures::spawn_local;
@@ -20,6 +21,12 @@ pub fn App() -> impl IntoView {
     let (frkn_nodes, set_frkn_nodes) = create_signal(Vec::<FrknNodeStatus>::new());
     let (frkn_loading, set_frkn_loading) = create_signal(true);
     let (expanded, set_expanded) = create_signal(false);
+    // Per-node speed measurement: results and failures keyed by hostname,
+    // the pool currently selected, and who is being measured right now.
+    let (bench_results, set_bench_results) = create_signal(HashMap::<String, f64>::new());
+    let (bench_failed, set_bench_failed) = create_signal(HashSet::<String>::new());
+    let (bench_pool, set_bench_pool) = create_signal(Option::<String>::None);
+    let (bench_busy, set_bench_busy) = create_signal(Option::<String>::None);
     let (lang, set_lang) = create_signal(detect_lang());
 
     // Заменить на реальные ссылки после публикации в сторах.
@@ -61,6 +68,19 @@ pub fn App() -> impl IntoView {
                     }
                     let (aggregate, statuses) = check_frkn_nodes(&nodes).await;
                     set_frkn_aggregate.set(aggregate);
+                    // Default pool: the one the user is connected to (a node
+                    // address matches our IP), otherwise the first pool listed.
+                    let my_ip = ip_info.get_untracked().map(|i| i.ip).unwrap_or_default();
+                    let mut pools: Vec<String> =
+                        statuses.iter().filter_map(|n| n.pool.clone()).collect();
+                    pools.sort();
+                    pools.dedup();
+                    let default_pool = statuses
+                        .iter()
+                        .find(|n| !my_ip.is_empty() && n.address == my_ip)
+                        .and_then(|n| n.pool.clone())
+                        .or_else(|| pools.first().cloned());
+                    set_bench_pool.set(default_pool);
                     set_frkn_nodes.set(statuses);
                 }
                 Err(e) => {
@@ -89,6 +109,64 @@ pub fn App() -> impl IntoView {
                 }
             }
             set_is_speed_testing.set(false);
+        });
+    };
+
+    // Measure one node from this device (its own bench file, same path as
+    // status.frkn.org). A failed node is remembered so the UI shows "нет bench"
+    // instead of silently retrying on every render.
+    let bench_one = move |hostname: String| {
+        set_bench_busy.set(Some(hostname.clone()));
+        spawn_local(async move {
+            match measure_node_speed(&hostname).await {
+                Ok(mbps) => {
+                    set_bench_results.update(|m| {
+                        m.insert(hostname.clone(), mbps);
+                    });
+                    set_bench_failed.update(|s| {
+                        s.remove(&hostname);
+                    });
+                }
+                Err(_) => {
+                    set_bench_failed.update(|s| {
+                        s.insert(hostname.clone());
+                    });
+                }
+            }
+            set_bench_busy.set(None);
+        });
+    };
+
+    // Measure every online node of the selected pool, one after another: the
+    // median is only meaningful when the samples come from the same moment.
+    let bench_selected_pool = move |_| {
+        let pool = bench_pool.get_untracked();
+        set_bench_busy.set(Some("__pool".to_string()));
+        spawn_local(async move {
+            let hostnames: Vec<String> = frkn_nodes
+                .get_untracked()
+                .into_iter()
+                .filter(|n| n.pool == pool && n.browser_status == ServiceStatus::Online)
+                .map(|n| n.hostname)
+                .collect();
+            for h in hostnames {
+                match measure_node_speed(&h).await {
+                    Ok(mbps) => {
+                        set_bench_results.update(|m| {
+                            m.insert(h.clone(), mbps);
+                        });
+                        set_bench_failed.update(|s| {
+                            s.remove(&h);
+                        });
+                    }
+                    Err(_) => {
+                        set_bench_failed.update(|s| {
+                            s.insert(h.clone());
+                        });
+                    }
+                }
+            }
+            set_bench_busy.set(None);
         });
     };
 
@@ -363,6 +441,115 @@ pub fn App() -> impl IntoView {
                     }}
                 </div>
             </section>
+
+            // Speed by pool: the pool is the measurement unit — median over the
+            // nodes that answered this device, details per node underneath.
+            {move || {
+                let nodes = frkn_nodes.get();
+                let lang_now = lang.get();
+                let mut pools: Vec<(String, String)> = Vec::new();
+                for n in &nodes {
+                    if let Some(pid) = &n.pool {
+                        if !pools.iter().any(|(id, _)| id == pid) {
+                            let title = pool_title(pid, n.pool_translation.as_ref(), lang_now);
+                            pools.push((pid.clone(), title));
+                        }
+                    }
+                }
+                pools.sort_by(|a, b| a.1.cmp(&b.1));
+                if pools.is_empty() {
+                    return None;
+                }
+                let active = bench_pool.get();
+                let in_pool: Vec<FrknNodeStatus> = nodes
+                    .iter()
+                    .filter(|n| n.pool == active)
+                    .cloned()
+                    .collect();
+                let results = bench_results.get();
+                let failed = bench_failed.get();
+                let measured: Vec<f64> = in_pool
+                    .iter()
+                    .filter_map(|n| results.get(&n.hostname).copied())
+                    .collect();
+                let med_txt = match median(&measured) {
+                    Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
+                    None => "—".to_string(),
+                };
+                let summary = t(lang_now, "pool_median")
+                    .replace("{mbps}", &med_txt)
+                    .replace("{n}", &measured.len().to_string())
+                    .replace("{m}", &in_pool.len().to_string());
+                let pool_busy = bench_busy.get().as_deref() == Some("__pool");
+                Some(view! {
+                    <section class="mb-8">
+                        <div class="frkn-card frkn-gradient-border rounded-2xl p-5">
+                            <h3 class="text-lg font-bold mb-1">{t(lang_now, "pools_title")}</h3>
+                            <div class="flex flex-wrap gap-2 my-3">
+                                {pools.into_iter().map(|(pid, title)| {
+                                    let id_btn = pid.clone();
+                                    let is_active = active.as_deref() == Some(pid.as_str());
+                                    let class = if is_active {
+                                        "px-3 py-1.5 rounded-xl text-sm font-semibold bg-frkn-accent text-white"
+                                    } else {
+                                        "px-3 py-1.5 rounded-xl text-sm font-semibold bg-frkn-card border border-frkn-border text-frkn-muted hover:text-frkn-text"
+                                    };
+                                    view! {
+                                        <button on:click=move |_| set_bench_pool.set(Some(id_btn.clone())) class=class>
+                                            {title}
+                                        </button>
+                                    }
+                                }).collect_view()}
+                            </div>
+                            <div class="flex items-center justify-between gap-2 flex-wrap">
+                                <span class="text-sm text-frkn-muted">{summary}</span>
+                                <button
+                                    on:click=bench_selected_pool
+                                    disabled=pool_busy
+                                    class="px-3 py-2 rounded-xl bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 text-sm font-semibold transition disabled:opacity-50"
+                                >
+                                    {if pool_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
+                                </button>
+                            </div>
+                            <div class="mt-3 space-y-2">
+                                {in_pool.into_iter().map(|node| {
+                                    let hn = node.hostname.clone();
+                                    let hn_btn = node.hostname.clone();
+                                    let value = results.get(&hn).map(|v| format!("{:.0} {}", v, t(lang_now, "mbps")));
+                                    let is_failed = failed.contains(&hn);
+                                    let busy = bench_busy.get().as_deref() == Some(hn.as_str());
+                                    let shown = match value {
+                                        Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
+                                        None => if is_failed {
+                                            view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
+                                        } else {
+                                            view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
+                                        },
+                                    };
+                                    view! {
+                                        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/[0.03] border border-frkn-border">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                <span class="text-sm truncate">{node.label}</span>
+                                                <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
+                                            </div>
+                                            <div class="flex items-center gap-2 shrink-0">
+                                                {shown}
+                                                <button
+                                                    on:click=move |_| bench_one(hn_btn.clone())
+                                                    disabled=busy
+                                                    class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                                                >
+                                                    {if busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                }).collect_view()}
+                            </div>
+                        </div>
+                    </section>
+                })
+            }}
 
             // Error
             {move || error.get().map(|e| view! {
