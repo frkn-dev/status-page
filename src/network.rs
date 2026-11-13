@@ -698,25 +698,30 @@ pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
 /// preflight and double the measured time). Returns milliseconds.
 pub async fn measure_node_ping(hostname: &str) -> Option<u32> {
     let origin = bench_origin(hostname);
-    // The first request pays DNS + TCP + TLS (3-4 round trips) and reads as a
-    // 300 ms "ping" on a 70 ms path. Warm the connection up, then take the best
-    // of three keep-alive round trips — that is the number people expect.
-    let warm = format!("{origin}/speedtest/ping.txt?warm=1");
-    let res = gloo_net::http::Request::get(&warm).send().await.ok()?;
-    if !res.ok() {
-        return None;
+    // Every request carries its own timeout: on a blocked path the browser's
+    // default fetch timeout is tens of seconds, which made a whole pool run look
+    // hung (ping has no deadline of its own).
+    const PING_TIMEOUT_MS: u32 = 4_000;
+    async fn one(url: &str, timeout_ms: u32) -> Option<()> {
+        let send_fut = gloo_net::http::Request::get(url).send();
+        match select(Box::pin(send_fut), TimeoutFuture::new(timeout_ms)).await {
+            Either::Left((Ok(res), _)) if res.ok() => {
+                res.binary().await.ok()?;
+                Some(())
+            }
+            _ => None,
+        }
     }
-    let _ = res.binary().await.ok()?;
+    // Warm DNS + TCP + TLS so the samples below are real round trips, not the
+    // handshake (the cold request reads as 3-4x the path RTT).
+    one(&format!("{origin}/speedtest/ping.txt?warm=1"), PING_TIMEOUT_MS).await?;
     let mut best = u32::MAX;
     for i in 0..3 {
         let url = format!("{origin}/speedtest/ping.txt?cb={}-{}", now_ms() as u64, i);
         let start = now_ms();
-        let res = gloo_net::http::Request::get(&url).send().await.ok()?;
-        if !res.ok() {
-            return None;
-        }
-        let _ = res.binary().await.ok()?;
+        one(&url, PING_TIMEOUT_MS).await?;
         best = best.min((now_ms() - start).max(0.0) as u32);
     }
     (best != u32::MAX).then_some(best)
 }
+
