@@ -251,160 +251,172 @@ pub fn App() -> impl IntoView {
         bench_pool_run(None);
     };
 
+    // Pool chips act as tabs: one row of tags, the selected pool's nodes below.
     let pools_block = move || -> Option<View> {
-                let nodes = frkn_nodes.get();
-                let lang_now = lang.get();
-                let mut pools: Vec<(String, String)> = Vec::new();
-                for n in &nodes {
-                    if let Some(pid) = &n.pool {
-                        if !pools.iter().any(|(id, _)| id == pid) {
-                            let title = pool_title(pid, n.pool_translation.as_ref(), lang_now);
-                            pools.push((pid.clone(), title));
-                        }
-                    }
+        let nodes = frkn_nodes.get();
+        let lang_now = lang.get();
+        let mut pools: Vec<(String, String)> = Vec::new();
+        for n in &nodes {
+            if let Some(pid) = &n.pool {
+                if !pools.iter().any(|(id, _)| id == pid) {
+                    let title = pool_title(pid, n.pool_translation.as_ref(), lang_now);
+                    pools.push((pid.clone(), title));
                 }
-                pools.sort_by(|a, b| a.1.cmp(&b.1));
-                if pools.is_empty() {
-                    return None;
-                }
-                let results = bench_results.get();
-                let failed = bench_failed.get();
-                let busy = bench_busy.get();
-                let open = bench_pool.get();
-                let all_busy = busy.as_deref() == Some("__all");
-                let rows = pools.into_iter().map(|(pid, title)| {
-                    let in_pool: Vec<FrknNodeStatus> = nodes
-                        .iter()
-                        .filter(|n| n.pool.as_deref() == Some(pid.as_str()))
-                        .cloned()
-                        .collect();
-                    let measured: Vec<f64> = in_pool
-                        .iter()
-                        .filter_map(|n| results.get(&n.hostname).copied())
-                        .collect();
-                    let med_txt = match median(&measured) {
-                        Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
-                        None => "—".to_string(),
-                    };
-                    // Nodes the api reports online but this device cannot reach are
-                    // worth calling out: it is a path problem, not a dead node.
-                    let unreachable = in_pool
-                        .iter()
-                        .filter(|n| n.api_status == "Online")
-                        .filter(|n| {
-                            failed
-                                .get(&n.hostname)
-                                .is_some_and(|r| !r.starts_with("http 404") && !r.starts_with("http 403"))
-                        })
-                        .count();
-                    let mut summary = t(lang_now, "pool_median")
-                        .replace("{mbps}", &med_txt)
-                        .replace("{n}", &measured.len().to_string())
-                        .replace("{m}", &in_pool.len().to_string());
-                    if unreachable > 0 {
-                        summary.push_str(&t(lang_now, "pool_unreachable").replace("{k}", &unreachable.to_string()));
-                    }
-                    let is_open = open.as_deref() == Some(pid.as_str());
-                    let pid_toggle = pid.clone();
-                    let pid_measure = pid.clone();
-                    let pool_busy = busy.as_deref() == Some("__pool");
-                    let detail = if is_open {
-                        let items = in_pool.into_iter().map(|node| {
-                            let hn = node.hostname.clone();
-                            let hn_btn = node.hostname.clone();
-                            let ping = bench_ping.get().get(&hn).copied();
-                            let value = results.get(&hn).map(|v| match ping {
-                                Some(ms) => format!("{:.0} {} · {} ms", v, t(lang_now, "mbps"), ms),
-                                None => format!("{:.0} {}", v, t(lang_now, "mbps")),
-                            });
-                            let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
-                            let fail_reason = failed.get(&hn).cloned();
-                            let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
-                            // Some nodes carry the pool name as their label; fall
-                            // back to the hostname so rows stay distinguishable.
-                            let row_name = if node.label.trim() == title.trim() || node.label.is_empty() {
-                                node.hostname.clone()
-                            } else {
-                                node.label.clone()
-                            };
-                            let quality = results.get(&hn).map(|v| t(lang_now, quality_key(*v)));
-                            let shown = match value {
-                                Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
-                                None => match fail_reason.as_deref() {
-                                    Some(r) if r.starts_with("http 404") || r.starts_with("http 403") => {
-                                        view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
-                                    }
-                                    Some(_) => view! { <span class="text-xs text-rose-400">{t(lang_now, "no_answer")}</span> }.into_view(),
-                                    None => if node.api_status == "Online"
-                                        && busy_all_or_node(bench_busy.get(), &hn)
-                                    {
-                                        view! { <span class="text-xs text-frkn-accent">"…"</span> }.into_view()
-                                    } else {
-                                        view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
-                                    },
-                                },
-                            };
-                            view! {
-                                <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/20 border border-frkn-border">
-                                    <div class="flex items-center gap-2 min-w-0">
-                                        <span class="text-sm truncate">{row_name}</span>
-                                        <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
-                                        <span class="text-xs text-frkn-muted shrink-0">{node.api_status}</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 shrink-0">
-                                        {shown}
-                                        {quality.map(|q| view! {
-                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-frkn-border text-frkn-muted whitespace-nowrap">{q}</span>
-                                        })}
-                                        {if gaming_ok(ping) {
-                                            Some(view! { <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 whitespace-nowrap">{t(lang_now, "q_gaming")}</span> })
-                                        } else { None }}
-                                        <button
-                                            on:click=move |_| bench_one(hn_btn.clone())
-                                            disabled=row_busy
-                                            class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
-                                        >
-                                            {if row_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
-                                        </button>
-                                    </div>
-                                </div>
-                            }
-                        }).collect_view();
-                        Some(view! { <div class="mt-2 space-y-2">{items}</div> })
-                    } else {
-                        None
-                    };
-                    view! {
-                        <div class="rounded-xl bg-white/[0.03] border border-frkn-border">
-                            <div class="flex items-center justify-between gap-2 p-3">
-                                <button
-                                    on:click=move |_| set_bench_pool.set(if is_open { None } else { Some(pid_toggle.clone()) })
-                                    class="flex items-center gap-2 min-w-0 text-left"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-                                        class={if is_open { "w-4 h-4 shrink-0 rotate-90 transition-transform" } else { "w-4 h-4 shrink-0 transition-transform" }}>
-                                        <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
-                                    </svg>
-                                    <span class="text-sm font-semibold truncate">{title}</span>
-                                </button>
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <span class="text-xs text-frkn-muted">{summary}</span>
-                                    <button
-                                        on:click=move |_| bench_pool_run(Some(pid_measure.clone()))
-                                        disabled=pool_busy || all_busy
-                                        class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
-                                    >
-                                        {if pool_busy || all_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
-                                    </button>
-                                </div>
-                            </div>
-                            {detail}
-                        </div>
-                    }
-                }).collect_view();
-        Some(view! { <div class="space-y-2 mt-3">{rows}</div> }.into_view())
-    };
+            }
+        }
+        pools.sort_by(|a, b| a.1.cmp(&b.1));
+        if pools.is_empty() {
+            return None;
+        }
 
+        let results = bench_results.get();
+        let failed = bench_failed.get();
+        let busy = bench_busy.get();
+        let all_busy = busy.as_deref() == Some("__all");
+        let pool_busy = busy.as_deref() == Some("__pool");
+
+        // Selected pool: the visitor's own one by default.
+        let selected = bench_pool
+            .get()
+            .filter(|pid| pools.iter().any(|(id, _)| id == pid))
+            .or_else(|| pools.first().map(|(id, _)| id.clone()))
+            .unwrap_or_default();
+
+        let chips = pools
+            .iter()
+            .map(|(pid, title)| {
+                let pid_click = pid.clone();
+                let in_pool: Vec<FrknNodeStatus> = nodes
+                    .iter()
+                    .filter(|n| n.pool.as_deref() == Some(pid.as_str()))
+                    .cloned()
+                    .collect();
+                let measured: Vec<f64> = in_pool
+                    .iter()
+                    .filter_map(|n| results.get(&n.hostname).copied())
+                    .collect();
+                let med = median(&measured);
+                let med_txt = match med {
+                    Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
+                    None => "—".to_string(),
+                };
+                let is_active = *pid == selected;
+                let class = if is_active {
+                    "px-3 py-1.5 rounded-full text-xs font-semibold bg-frkn-accent/25 border border-frkn-accent/50 text-white"
+                } else {
+                    "px-3 py-1.5 rounded-full text-xs font-semibold bg-white/[0.03] border border-frkn-border text-frkn-muted hover:text-frkn-text hover:border-frkn-accent/40"
+                };
+                view! {
+                    <button on:click=move |_| set_bench_pool.set(Some(pid_click.clone())) class=class>
+                        <span>{title.clone()}</span>
+                        <span class="ml-2 opacity-70">{med_txt}</span>
+                    </button>
+                }
+            })
+            .collect_view();
+
+        // Nodes of the selected pool only.
+        let in_pool: Vec<FrknNodeStatus> = nodes
+            .iter()
+            .filter(|n| n.pool.as_deref() == Some(selected.as_str()))
+            .cloned()
+            .collect();
+        let measured: Vec<f64> = in_pool
+            .iter()
+            .filter_map(|n| results.get(&n.hostname).copied())
+            .collect();
+        let med_txt = match median(&measured) {
+            Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
+            None => "—".to_string(),
+        };
+        let unreachable = in_pool
+            .iter()
+            .filter(|n| n.api_status == "Online")
+            .filter(|n| {
+                failed
+                    .get(&n.hostname)
+                    .is_some_and(|r| !r.starts_with("http 404") && !r.starts_with("http 403"))
+            })
+            .count();
+        let mut summary = t(lang_now, "pool_median")
+            .replace("{mbps}", &med_txt)
+            .replace("{n}", &measured.len().to_string())
+            .replace("{m}", &in_pool.len().to_string());
+        if unreachable > 0 {
+            summary.push_str(&t(lang_now, "pool_unreachable").replace("{k}", &unreachable.to_string()));
+        }
+        let measure_pid = selected.clone();
+
+        let rows = in_pool.into_iter().map(|node| {
+            let hn = node.hostname.clone();
+            let hn_btn = node.hostname.clone();
+            let ping = bench_ping.get().get(&hn).copied();
+            let value = results.get(&hn).map(|v| match ping {
+                Some(ms) => format!("{:.0} {} · {} ms", v, t(lang_now, "mbps"), ms),
+                None => format!("{:.0} {}", v, t(lang_now, "mbps")),
+            });
+            let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
+            let fail_reason = failed.get(&hn).cloned();
+            let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
+            let quality = results.get(&hn).map(|v| t(lang_now, quality_key(*v)));
+            let shown = match value {
+                Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
+                None => match fail_reason.as_deref() {
+                    Some(r) if r.starts_with("http 404") || r.starts_with("http 403") => {
+                        view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
+                    }
+                    Some(_) => view! { <span class="text-xs text-rose-400">{t(lang_now, "no_answer")}</span> }.into_view(),
+                    None => if node.api_status == "Online" && busy_all_or_node(bench_busy.get(), &hn) {
+                        view! { <span class="text-xs text-frkn-accent">"…"</span> }.into_view()
+                    } else {
+                        view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
+                    },
+                },
+            };
+            view! {
+                <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/20 border border-frkn-border">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-sm truncate">{node.label}</span>
+                        <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
+                        <span class="text-xs text-frkn-muted shrink-0">{node.api_status}</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        {shown}
+                        {quality.map(|q| view! {
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-frkn-border text-frkn-muted whitespace-nowrap">{q}</span>
+                        })}
+                        {if gaming_ok(ping) {
+                            Some(view! { <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 whitespace-nowrap">{t(lang_now, "q_gaming")}</span> })
+                        } else { None }}
+                        <button
+                            on:click=move |_| bench_one(hn_btn.clone())
+                            disabled=row_busy
+                            class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                        >
+                            {if row_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
+                        </button>
+                    </div>
+                </div>
+            }
+        }).collect_view();
+
+        Some(view! {
+            <div class="mt-3">
+                <div class="flex flex-wrap gap-2">{chips}</div>
+                <div class="mt-3 flex items-center justify-between gap-2 flex-wrap">
+                    <span class="text-xs text-frkn-muted">{summary}</span>
+                    <button
+                        on:click=move |_| bench_pool_run(Some(measure_pid.clone()))
+                        disabled=pool_busy || all_busy
+                        class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                    >
+                        {if pool_busy || all_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
+                    </button>
+                </div>
+                <div class="mt-2 space-y-2">{rows}</div>
+            </div>
+        }.into_view())
+    };
 
     view! {
         <div class="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
