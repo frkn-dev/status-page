@@ -286,10 +286,24 @@ pub fn App() -> impl IntoView {
                         Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
                         None => "—".to_string(),
                     };
-                    let summary = t(lang_now, "pool_median")
+                    // Nodes the api reports online but this device cannot reach are
+                    // worth calling out: it is a path problem, not a dead node.
+                    let unreachable = in_pool
+                        .iter()
+                        .filter(|n| n.api_status == "Online")
+                        .filter(|n| {
+                            failed
+                                .get(&n.hostname)
+                                .is_some_and(|r| !r.starts_with("http 404") && !r.starts_with("http 403"))
+                        })
+                        .count();
+                    let mut summary = t(lang_now, "pool_median")
                         .replace("{mbps}", &med_txt)
                         .replace("{n}", &measured.len().to_string())
                         .replace("{m}", &in_pool.len().to_string());
+                    if unreachable > 0 {
+                        summary.push_str(&t(lang_now, "pool_unreachable").replace("{k}", &unreachable.to_string()));
+                    }
                     let is_open = open.as_deref() == Some(pid.as_str());
                     let pid_toggle = pid.clone();
                     let pid_measure = pid.clone();
