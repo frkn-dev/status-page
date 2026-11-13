@@ -660,16 +660,33 @@ pub fn median(values: &[f64]) -> Option<f64> {
     Some(if v.len() % 2 == 0 { (v[mid - 1] + v[mid]) / 2.0 } else { v[mid] })
 }
 
-/// Per-node bench origin: `<node>.bench.beacon.frkn.org` on the dedicated bench
-/// port, where `<node>` is the first label of the node hostname (`eu01.frkn.org`
-/// -> `eu01.bench.beacon.frkn.org`). Only pool nodes get a name, so a duplicate
-/// label across the fleet cannot collide; the wildcard cert
-/// `*.bench.beacon.frkn.org` covers every node.
+/// Per-node bench origin on the dedicated bench port. Names follow the zone
+/// template `<hoster>-<cc>-<city>-<purpose>-<nn>` (see `beacon.frkn.org`), so a
+/// node cannot be found by guessing its hostname: the map below is the source.
+/// Nodes without an entry fall back to the old `<first-label>.bench` scheme.
+/// The wildcard cert `*.bench.beacon.frkn.org` still covers every name.
 const BENCH_PORT: u16 = 19443;
 const BENCH_DOMAIN: &str = "bench.beacon.frkn.org";
 
+const BENCH_HOSTS: &[(&str, &str)] = &[
+    ("at.frkn.org", "mis-at-vie-bench-01"),
+    ("ee.frkn.org", "soul-ee-tll-bench-01"),
+    ("eu01.frkn.org", "ncr-nl-ams-bench-01"),
+    ("eu02.frkn.org", "aeza-nl-ams-bench-01"),
+    ("fr.frkn.org", "aeza-fr-par-bench-01"),
+    ("pl.frkn.org", "fbw-fr-par-bench-01"),
+    ("tr.frkn.org", "hk-tr-ist-bench-01"),
+    ("msk-tw.frkn.org", "tw-ru-msk-bench-01"),
+    ("msk-tw-nvsb.frkn.org", "adm-ru-nsk-bench-01"),
+    ("msk-vdska.frkn.org", "vdska-ru-msk-bench-01"),
+];
+
 fn bench_origin(hostname: &str) -> String {
-    let label = hostname.split('.').next().unwrap_or(hostname);
+    let label = BENCH_HOSTS
+        .iter()
+        .find(|(host, _)| *host == hostname)
+        .map(|(_, label)| *label)
+        .unwrap_or_else(|| hostname.split('.').next().unwrap_or(hostname));
     format!("https://{label}.{BENCH_DOMAIN}:{BENCH_PORT}")
 }
 
