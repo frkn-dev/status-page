@@ -6,6 +6,7 @@ use crate::network::{
 use std::collections::{HashMap, HashSet};
 use crate::services::ServiceStatus;
 use leptos::*;
+use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 
 #[component]
@@ -137,18 +138,35 @@ pub fn App() -> impl IntoView {
         });
     };
 
-    // Measure every online node of the selected pool, one after another: the
-    // median is only meaningful when the samples come from the same moment.
-    let bench_selected_pool = move |_| {
-        let pool = bench_pool.get_untracked();
-        set_bench_busy.set(Some("__pool".to_string()));
+    // Measure online bench nodes one after another: the median is only
+    // meaningful when the samples come from the same moment. `None` = every
+    // pool (the global "Measure speed" button), `Some(pool)` = one pool.
+    let bench_pool_run = move |pool: Option<String>| {
+        let scope_all = pool.is_none();
+        set_bench_busy.set(Some(if scope_all { "__all" } else { "__pool" }.to_string()));
         spawn_local(async move {
-            let hostnames: Vec<String> = frkn_nodes
-                .get_untracked()
-                .into_iter()
-                .filter(|n| n.pool == pool && n.browser_status == ServiceStatus::Online)
-                .map(|n| n.hostname)
-                .collect();
+            let pick = || -> Vec<String> {
+                frkn_nodes
+                    .get_untracked()
+                    .into_iter()
+                    .filter(|n| n.pool.is_some() && n.browser_status == ServiceStatus::Online)
+                    .filter(|n| scope_all || n.pool == pool)
+                    .map(|n| n.hostname)
+                    .collect()
+            };
+            // The node list arrives with the status check; a click right after
+            // page load must not silently measure nothing.
+            let mut hostnames = pick();
+            let mut waited_ms = 0;
+            while hostnames.is_empty() && waited_ms < 20_000 {
+                TimeoutFuture::new(500).await;
+                waited_ms += 500;
+                hostnames = pick();
+            }
+            if hostnames.is_empty() {
+                set_bench_busy.set(None);
+                return;
+            }
             for h in hostnames {
                 match measure_node_speed(&h).await {
                     Ok(mbps) => {
@@ -168,6 +186,12 @@ pub fn App() -> impl IntoView {
             }
             set_bench_busy.set(None);
         });
+    };
+
+    // One click on the main button: own-connection speed + every pool's nodes.
+    let run_all = move |_| {
+        run_speed_test(());
+        bench_pool_run(None);
     };
 
     view! {
@@ -268,8 +292,8 @@ pub fn App() -> impl IntoView {
                             <p class="text-frkn-muted text-sm">{move || t(lang.get(), "speed_subtitle")}</p>
                         </div>
                         <button
-                            on:click=run_speed_test
-                            disabled=is_speed_testing
+                            on:click=run_all
+                            disabled=move || is_speed_testing.get() || frkn_loading.get()
                             class="frkn-btn px-5 py-2.5 rounded-xl text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition"
                         >
                             {move || if is_speed_testing.get() { t(lang.get(), "measuring").to_string() } else { t(lang.get(), "measure_speed").to_string() }}
@@ -442,8 +466,8 @@ pub fn App() -> impl IntoView {
                 </div>
             </section>
 
-            // Speed by pool: the pool is the measurement unit — median over the
-            // nodes that answered this device, details per node underneath.
+            // Speed by pool: one run covers every bench node, each pool row
+            // opens into its own per-node breakdown (medias over answered nodes).
             {move || {
                 let nodes = frkn_nodes.get();
                 let lang_now = lang.get();
@@ -460,92 +484,112 @@ pub fn App() -> impl IntoView {
                 if pools.is_empty() {
                     return None;
                 }
-                let active = bench_pool.get();
-                let in_pool: Vec<FrknNodeStatus> = nodes
-                    .iter()
-                    .filter(|n| n.pool == active)
-                    .cloned()
-                    .collect();
                 let results = bench_results.get();
                 let failed = bench_failed.get();
-                let measured: Vec<f64> = in_pool
-                    .iter()
-                    .filter_map(|n| results.get(&n.hostname).copied())
-                    .collect();
-                let med_txt = match median(&measured) {
-                    Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
-                    None => "—".to_string(),
-                };
-                let summary = t(lang_now, "pool_median")
-                    .replace("{mbps}", &med_txt)
-                    .replace("{n}", &measured.len().to_string())
-                    .replace("{m}", &in_pool.len().to_string());
-                let pool_busy = bench_busy.get().as_deref() == Some("__pool");
+                let busy = bench_busy.get();
+                let open = bench_pool.get();
+                let all_busy = busy.as_deref() == Some("__all");
+                let rows = pools.into_iter().map(|(pid, title)| {
+                    let in_pool: Vec<FrknNodeStatus> = nodes
+                        .iter()
+                        .filter(|n| n.pool.as_deref() == Some(pid.as_str()))
+                        .cloned()
+                        .collect();
+                    let measured: Vec<f64> = in_pool
+                        .iter()
+                        .filter_map(|n| results.get(&n.hostname).copied())
+                        .collect();
+                    let med_txt = match median(&measured) {
+                        Some(v) => format!("{:.0} {}", v, t(lang_now, "mbps")),
+                        None => "—".to_string(),
+                    };
+                    let summary = t(lang_now, "pool_median")
+                        .replace("{mbps}", &med_txt)
+                        .replace("{n}", &measured.len().to_string())
+                        .replace("{m}", &in_pool.len().to_string());
+                    let is_open = open.as_deref() == Some(pid.as_str());
+                    let pid_toggle = pid.clone();
+                    let pid_measure = pid.clone();
+                    let pool_busy = busy.as_deref() == Some("__pool");
+                    let detail = if is_open {
+                        let items = in_pool.into_iter().map(|node| {
+                            let hn = node.hostname.clone();
+                            let hn_btn = node.hostname.clone();
+                            let value = results.get(&hn).map(|v| format!("{:.0} {}", v, t(lang_now, "mbps")));
+                            let is_failed = failed.contains(&hn);
+                            let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
+                            // Some nodes carry the pool name as their label; fall
+                            // back to the hostname so rows stay distinguishable.
+                            let row_name = if node.label.trim() == title.trim() || node.label.is_empty() {
+                                node.hostname.clone()
+                            } else {
+                                node.label.clone()
+                            };
+                            let shown = match value {
+                                Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
+                                None => if is_failed {
+                                    view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
+                                } else {
+                                    view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
+                                },
+                            };
+                            view! {
+                                <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-black/20 border border-frkn-border">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="text-sm truncate">{row_name}</span>
+                                        <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
+                                        <span class="text-xs text-frkn-muted shrink-0">{node.api_status}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        {shown}
+                                        <button
+                                            on:click=move |_| bench_one(hn_btn.clone())
+                                            disabled=row_busy
+                                            class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                                        >
+                                            {if row_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }).collect_view();
+                        Some(view! { <div class="mt-2 space-y-2">{items}</div> })
+                    } else {
+                        None
+                    };
+                    view! {
+                        <div class="rounded-xl bg-white/[0.03] border border-frkn-border">
+                            <div class="flex items-center justify-between gap-2 p-3">
+                                <button
+                                    on:click=move |_| set_bench_pool.set(if is_open { None } else { Some(pid_toggle.clone()) })
+                                    class="flex items-center gap-2 min-w-0 text-left"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                                        class={if is_open { "w-4 h-4 shrink-0 rotate-90 transition-transform" } else { "w-4 h-4 shrink-0 transition-transform" }}>
+                                        <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                                    </svg>
+                                    <span class="text-sm font-semibold truncate">{title}</span>
+                                </button>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <span class="text-xs text-frkn-muted">{summary}</span>
+                                    <button
+                                        on:click=move |_| bench_pool_run(Some(pid_measure.clone()))
+                                        disabled=pool_busy || all_busy
+                                        class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
+                                    >
+                                        {if pool_busy || all_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
+                                    </button>
+                                </div>
+                            </div>
+                            {detail}
+                        </div>
+                    }
+                }).collect_view();
                 Some(view! {
                     <section class="mb-8">
                         <div class="frkn-card frkn-gradient-border rounded-2xl p-5">
                             <h3 class="text-lg font-bold mb-1">{t(lang_now, "pools_title")}</h3>
-                            <div class="flex flex-wrap gap-2 my-3">
-                                {pools.into_iter().map(|(pid, title)| {
-                                    let id_btn = pid.clone();
-                                    let is_active = active.as_deref() == Some(pid.as_str());
-                                    let class = if is_active {
-                                        "px-3 py-1.5 rounded-xl text-sm font-semibold bg-frkn-accent text-white"
-                                    } else {
-                                        "px-3 py-1.5 rounded-xl text-sm font-semibold bg-frkn-card border border-frkn-border text-frkn-muted hover:text-frkn-text"
-                                    };
-                                    view! {
-                                        <button on:click=move |_| set_bench_pool.set(Some(id_btn.clone())) class=class>
-                                            {title}
-                                        </button>
-                                    }
-                                }).collect_view()}
-                            </div>
-                            <div class="flex items-center justify-between gap-2 flex-wrap">
-                                <span class="text-sm text-frkn-muted">{summary}</span>
-                                <button
-                                    on:click=bench_selected_pool
-                                    disabled=pool_busy
-                                    class="px-3 py-2 rounded-xl bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 text-sm font-semibold transition disabled:opacity-50"
-                                >
-                                    {if pool_busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_pool").to_string() }}
-                                </button>
-                            </div>
-                            <div class="mt-3 space-y-2">
-                                {in_pool.into_iter().map(|node| {
-                                    let hn = node.hostname.clone();
-                                    let hn_btn = node.hostname.clone();
-                                    let value = results.get(&hn).map(|v| format!("{:.0} {}", v, t(lang_now, "mbps")));
-                                    let is_failed = failed.contains(&hn);
-                                    let busy = bench_busy.get().as_deref() == Some(hn.as_str());
-                                    let shown = match value {
-                                        Some(v) => view! { <span class="text-sm font-semibold text-emerald-400">{v}</span> }.into_view(),
-                                        None => if is_failed {
-                                            view! { <span class="text-xs text-frkn-muted">{t(lang_now, "no_bench")}</span> }.into_view()
-                                        } else {
-                                            view! { <span class="text-xs text-frkn-muted">"—"</span> }.into_view()
-                                        },
-                                    };
-                                    view! {
-                                        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/[0.03] border border-frkn-border">
-                                            <div class="flex items-center gap-2 min-w-0">
-                                                <span class="text-sm truncate">{node.label}</span>
-                                                <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
-                                            </div>
-                                            <div class="flex items-center gap-2 shrink-0">
-                                                {shown}
-                                                <button
-                                                    on:click=move |_| bench_one(hn_btn.clone())
-                                                    disabled=busy
-                                                    class="px-2 py-1 rounded-lg text-xs font-semibold bg-frkn-card border border-frkn-border hover:border-frkn-accent/40 disabled:opacity-50"
-                                                >
-                                                    {if busy { t(lang_now, "measuring").to_string() } else { t(lang_now, "measure_node").to_string() }}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    }
-                                }).collect_view()}
-                            </div>
+                            <div class="space-y-2 mt-3">{rows}</div>
                         </div>
                     </section>
                 })
