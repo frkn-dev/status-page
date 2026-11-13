@@ -3,29 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Как мы измеряем доступность — Status Page</title>
-    <meta name="theme-color" content="#0b0d12">
+    <title>Как мы измеряем — Status Page</title>
+    <meta name="theme-color" content="#050505">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
                         frkn: {
-                            bg: '#0b0d12',
-                            card: '#121621',
-                            text: '#e6e8ef',
-                            muted: '#9aa1b2',
-                            accent: '#5b7cfa',
-                            accent2: '#22d3ee',
-                            border: '#1f2433',
+                            bg: '#050505',
+                            card: '#111215',
+                            text: '#f4f4f5',
+                            muted: '#8b949e',
+                            accent: '#0066ff',
+                            accent2: '#7aa7ff',
+                            border: 'rgba(255,255,255,0.08)',
                         }
                     },
                     fontFamily: {
-                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                        sans: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+                        mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
                     }
                 }
             }
@@ -33,240 +34,181 @@
     </script>
     <style>
         :root {
-            --frkn-bg: #0b0d12;
-            --frkn-card: #121621;
-            --frkn-text: #e6e8ef;
-            --frkn-muted: #9aa1b2;
-            --frkn-accent: #5b7cfa;
-            --frkn-accent2: #22d3ee;
-            --frkn-border: #1f2433;
+            --frkn-bg: #050505;
+            --frkn-card: #111215;
+            --frkn-text: #f4f4f5;
+            --frkn-muted: #8b949e;
+            --frkn-accent: #0066ff;
+            --frkn-accent2: #7aa7ff;
+            --frkn-border: rgba(255, 255, 255, 0.08);
+            --frkn-line-strong: rgba(255, 255, 255, 0.14);
         }
         body {
-            background: var(--frkn-bg);
+            background:
+                radial-gradient(900px 520px at 50% -180px, rgba(0, 102, 255, 0.16), transparent 70%),
+                var(--frkn-bg);
             color: var(--frkn-text);
-            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
         }
         .frkn-card {
-            background: linear-gradient(135deg, var(--frkn-card), #1a1f2e);
+            background: linear-gradient(145deg, #12141a 0%, #0a0b0e 100%);
             border: 1px solid var(--frkn-border);
-        }
-        .frkn-gradient-text {
-            background: linear-gradient(90deg, var(--frkn-accent), var(--frkn-accent2));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .frkn-gradient-border {
-            position: relative;
-        }
-        .frkn-gradient-border::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, var(--frkn-accent), var(--frkn-accent2));
-            border-radius: 2px 2px 0 0;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
         }
         .frkn-btn {
-            background: linear-gradient(90deg, var(--frkn-accent), #4f46e5);
-            transition: all 0.25s ease;
+            background: rgba(0, 102, 255, 0.28);
+            border-radius: 11px;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(0, 102, 255, 0.16);
+            transition: background 0.2s ease;
         }
-        .frkn-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(91, 124, 250, 0.3);
+        .frkn-btn:hover { background: rgba(0, 102, 255, 0.38); }
+        .rule {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 102, 255, 0.3) 12%, rgba(122, 167, 255, 0.9) 50%, rgba(0, 102, 255, 0.3) 88%, transparent);
+            box-shadow: 0 0 14px rgba(0, 102, 255, 0.35);
         }
-        .service-icon svg {
-            width: 32px;
-            height: 32px;
-            fill: #e6e8ef !important;
-        }
-        code {
-            background: rgba(91, 124, 250, 0.12);
-            color: var(--frkn-accent2);
-            padding: 0.125rem 0.375rem;
-            border-radius: 0.375rem;
-            font-size: 0.875em;
-        }
+        h2 { letter-spacing: 0.02em; }
+        .kbd { border: 1px solid var(--frkn-border); border-radius: 6px; padding: 1px 6px; font-size: 11px; color: var(--frkn-muted); }
     </style>
 </head>
 <body class="min-h-screen antialiased">
-    <div class="min-h-screen p-4 md:p-8 max-w-4xl mx-auto">
-        <header class="mb-8">
-            <a href="/" class="inline-flex items-center gap-2 text-frkn-muted hover:text-frkn-accent transition mb-4">
-                <span>←</span>
-                <span>Назад к статусу</span>
+<div class="max-w-3xl mx-auto p-5 md:p-8">
+
+    <header class="mb-8">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <a href="/" class="flex items-center gap-3 no-underline">
+                <img src="logo.png" alt="FRKN" class="w-10 h-10 rounded-lg" />
+                <span class="text-2xl md:text-3xl font-extrabold tracking-tight">Как мы измеряем</span>
             </a>
-            <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">
-                Как мы измеряем доступность
-            </h1>
-            <p class="text-frkn-muted mt-2">
-                Прозрачность о технологиях и методах замеров на этой странице.
-            </p>
-        </header>
+            <a href="/" class="px-3 py-2 rounded-xl bg-white/[0.04] border text-sm font-semibold no-underline" style="border-color:var(--frkn-border);color:var(--frkn-text)">← Назад</a>
+        </div>
+        <p class="text-frkn-muted text-sm mt-3">
+            Коротко: мы меряем ваш собственный путь до наших серверов — из браузера, без промежуточных сервисов.
+            Всё, что вы видите на странице, получено вашим устройством.
+        </p>
+        <div class="rule mt-5"></div>
+    </header>
 
-        <main class="space-y-6">
-            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
-                <h2 class="text-xl font-bold mb-3">Технологии</h2>
-                <p class="text-frkn-muted mb-4">
-                    Страница работает полностью в браузере, без собственного сервера. Это важно, потому что ограничивает, какие проверки мы можем делать.
-                </p>
-                <ul class="space-y-2 text-frkn-muted">
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span><strong class="text-frkn-text">Rust</strong> — язык, на котором написана логика.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span><strong class="text-frkn-text">WebAssembly (WASM)</strong> — Rust скомпилирован в WASM и выполняется в браузере.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span><strong class="text-frkn-text">Leptos</strong> — реактивный фреймворк для UI на Rust.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span><strong class="text-frkn-text">Tailwind CSS</strong> — стилизация.</span>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
-                <h2 class="text-xl font-bold mb-3">Доступность сервисов</h2>
-                <p class="text-frkn-muted mb-4">
-                    Проверка доступности сторонних сервисов (YouTube, X/Twitter, Instagram, Telegram и др.) <strong class="text-frkn-text">вынесена в браузерное расширение</strong>. Связано это с тем, что из обычного веб-страницы нельзя корректно отличить настоящий сайт от провайдерской заглушки: браузер не даёт прочитать тело ответа чужого домена без CORS.
-                </p>
-                <p class="text-frkn-muted mb-4">
-                    Расширение работает из браузера пользователя, может читать HTTP-статус и тело ответа, поэтому определяет блокировки и заглушки точнее, чем статус-страница.
-                </p>
-                <p class="text-frkn-muted mb-4">
-                    На этой странице оставлены проверки, которые не требуют чтения чужих ответов:
-                </p>
-                <ul class="space-y-2 text-frkn-muted">
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Определение внешнего IP и VPN.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Статус серверов FRKN и FRKN API (CORS настроен).</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Измерение скорости загрузки файла.</span>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
-                <h2 class="text-xl font-bold mb-3">Определение VPN</h2>
-                <p class="text-frkn-muted mb-4">
-                    Мы определяем ваш внешний IP, страну и провайдера через публичные геолокационные сервисы: <code>ipapi.co</code>, <code>ipwho.is</code> и fallback на <code>ipinfo.io</code>.
-                </p>
-                <p class="text-frkn-muted mb-4">
-                    VPN считается включённым, если:
-                </p>
-                <ul class="space-y-2 text-frkn-muted">
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Провайдер (организация владельца IP) или ASN похожи на хостинг, дата-центр или VPN-сервис.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Ваш внешний IP совпадает с одним из IP-адресов серверов FRKN, полученных в ответе FRKN API.</span>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
-                <h2 class="text-xl font-bold mb-3">Серверы FRKN</h2>
-                <p class="text-frkn-muted mb-4">
-                    Страница загружает актуальный список нод с FRKN API и параллельно проверяет доступность каждого hostname, а также самого API через тот же endpoint.
-                </p>
-                <p class="text-frkn-muted mb-4">
-                    Сводный статус может быть:
-                </p>
-                <ul class="space-y-2 text-frkn-muted">
-                    <li class="flex items-start gap-3">
-                        <span class="text-emerald-400 font-bold">•</span>
-                        <span><strong class="text-frkn-text">Все доступны</strong> — все ноды и API отвечают.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-yellow-400 font-bold">•</span>
-                        <span><strong class="text-frkn-text">Частично доступны</strong> — часть нод или API не отвечает.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-rose-400 font-bold">•</span>
-                        <span><strong class="text-frkn-text">Недоступны</strong> — ни одна из проверенных точек не отвечает.</span>
-                    </li>
-                </ul>
-                <p class="text-frkn-muted mt-4">
-                    Если список нод не удалось загрузить (например, из-за отсутствия CORS на стороне API), карточка покажет статус <strong class="text-frkn-text">Не удалось загрузить</strong>.
-                </p>
-            </section>
-
-            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
-                <h2 class="text-xl font-bold mb-3">Измерение скорости</h2>
-                <p class="text-frkn-muted mb-4">
-                    Speed test загружает тестовый бинарный файл фиксированного размера. Мы замеряем время от начала загрузки до получения всех байт и считаем скорость:
-                </p>
-                <div class="bg-frkn-bg/50 rounded-xl p-4 border border-frkn-border font-mono text-sm text-frkn-accent2 mb-4">
-                    Mbps = (размер_файла_в_байтах × 8) / время_в_секундах / 1 000 000
-                </div>
-                <p class="text-frkn-muted">
-                    К URL добавляется уникальный параметр <code>?cb=...</code>, чтобы браузер не брал файл из кэша. Если 10 МБ файл недоступен или слишком медленный, пробуем 1 МБ.
-                </p>
-            </section>
-
-            <section class="frkn-card frkn-gradient-border rounded-2xl p-6">
-                <h2 class="text-xl font-bold mb-3">Важные ограничения</h2>
-                <ul class="space-y-2 text-frkn-muted">
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Это не полноценный uptime-мониторинг. Страница показывает состояние из вашего браузера и вашей сети прямо сейчас.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Браузер не умеет ICMP ping. Пинг на этой странице — это HTTP-латентность.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Проверка сторонних сервисов (YouTube, X/Twitter, Instagram и др.) вынесена в браузерное расширение, потому что без CORS нельзя отличить настоящий сайт от заглушки.</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="text-frkn-accent font-bold">•</span>
-                        <span>Карточка FRKN загружает список нод из ответа FRKN API. Если API не отдаёт CORS-заголовки, список не загрузится.</span>
-                    </li>
-                </ul>
-            </section>
-        </main>
-
-        <footer class="mt-12 text-center text-frkn-muted text-sm pt-8 pb-8 border-t border-frkn-border">
-            <div class="flex flex-col items-center justify-center gap-3">
-                <div class="flex flex-wrap items-center justify-center gap-3">
-                    <a
-                        href="https://github.com/frkn-dev/status-page"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center gap-2 hover:text-frkn-accent transition"
-                    >
-                        <img src="icons/github.svg" alt="GitHub" class="w-4 h-4" />
-                        "GitHub"
-                    </a>
-                    <span class="hidden sm:inline">"•"</span>
-                    <a href="privacy.html" class="hover:text-frkn-accent transition">Политика конфиденциальности</a>
-                </div>
-                <a
-                    href="https://frkn.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-2 hover:text-frkn-accent transition"
-                >
-                    powered by <img src="logo.png" alt="FRKN" class="w-4 h-4 rounded-sm" /> <span class="font-bold text-frkn-text">FRKN</span>
-                </a>
+    <!-- 1. four cards -->
+    <section class="grid sm:grid-cols-2 gap-3 mb-8">
+        <div class="frkn-card rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-widest text-frkn-muted mb-1">Пинг</div>
+            <div class="text-sm leading-relaxed">
+                Сколько времени уходит на один круг «запрос → ответ». Меньше — лучше.
+                До 50&nbsp;мс — отлично для игр и звонков, 50–120&nbsp;мс — рабочий интернет, больше 200&nbsp;мс — заметны задержки.
             </div>
-        </footer>
-    </div>
+        </div>
+        <div class="frkn-card rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-widest text-frkn-muted mb-1">Скорость</div>
+            <div class="text-sm leading-relaxed">
+                Сколько данных качается за секунду по одному соединению. Это не «ширина канала» оператора, а реальная скорость
+                одного скачивания с конкретного сервера.
+            </div>
+        </div>
+        <div class="frkn-card rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-widest text-frkn-muted mb-1">Стабильность (джиттер)</div>
+            <div class="text-sm leading-relaxed">
+                Разброс пинга: запись <span class="text-frkn-accent2">72&nbsp;ms&nbsp;±6</span> значит три замера уложились в 6&nbsp;мс.
+                Чем меньше разброс, тем ровнее видео и звонки.
+            </div>
+        </div>
+        <div class="frkn-card rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-widest text-frkn-muted mb-1">Утечки</div>
+            <div class="text-sm leading-relaxed">
+                Проверяем, не уходит ли часть трафика мимо VPN: IPv6 и адреса, которые браузер отдаёт по WebRTC.
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. ping -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Как меряется пинг</h2>
+        <div class="frkn-card rounded-2xl p-4 text-sm leading-relaxed space-y-2">
+            <p>Мы скачиваем крошечный файл (2 байта) с сервера и засекаем время до ответа.</p>
+            <p>Первый запрос всегда медленнее: браузеру нужно найти адрес (DNS), установить соединение и договориться о шифровании.
+                Поэтому мы делаем один «прогревающий» запрос, а потом <b>три быстрых</b> по уже открытому соединению и берём <b>лучший</b>.</p>
+            <p class="text-frkn-muted">Это HTTP-пинг — ближайшее, что умеет браузер. Классический ICMP-пинг утилит вроде <span class="kbd">ping</span> обычно на 1–2&nbsp;мс меньше, потому что не несёт HTTP-заголовков.</p>
+        </div>
+    </section>
+
+    <!-- 3. speed -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Как меряется скорость</h2>
+        <div class="frkn-card rounded-2xl p-4 text-sm leading-relaxed space-y-2">
+            <p>Сначала качаем <b>1&nbsp;МБ</b> — это быстро даже на слабом канале. Если успели меньше чем за секунду, качаем <b>10&nbsp;МБ</b> и считаем по ним: на быстрых каналах маленький файл даёт заниженную цифру.</p>
+            <p>Файл — случайные байты, поэтому сжатие его не «ускоряет», и кэш отключён: каждый замер — настоящее скачивание.</p>
+            <p class="text-frkn-muted">Мы меряем <b>один поток</b>, как одно скачивание в браузере. Спортивные тесты (Ookla и подобные) качают в 4–8 потоков и показывают выше — это не обман, просто другая методика.</p>
+        </div>
+    </section>
+
+    <!-- 4. pools -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Что такое пулы</h2>
+        <div class="frkn-card rounded-2xl p-4 text-sm leading-relaxed space-y-2">
+            <p>Серверы сгруппированы по назначению: <b>EU</b>, <b>RU</b> и <b>Gaming</b>. Внутри пула — несколько серверов в разных странах,
+                и приложение выбирает один из них.</p>
+            <p>Поэтому мы показываем замер по каждому серверу отдельно: скорость зависит от того, до какого сервера вы реально дотягиваетесь,
+                а не от «пула вообще».</p>
+        </div>
+    </section>
+
+    <!-- 5. labels -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Как читать подписи</h2>
+        <div class="frkn-card rounded-2xl overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="text-frkn-muted text-xs uppercase tracking-wider">
+                <tr><th class="text-left p-3">Скорость</th><th class="text-left p-3">Что это значит</th></tr>
+                </thead>
+                <tbody>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 150 Мбит</td><td class="p-3">8K на нескольких устройствах одновременно</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 100 Мбит</td><td class="p-3">8K-видео</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 80 Мбит</td><td class="p-3">4K на нескольких устройствах</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 50 Мбит</td><td class="p-3">4K-видео</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 25 Мбит</td><td class="p-3">4K с запасом небольшим</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 10 Мбит</td><td class="p-3">HD-видео</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">≥ 5 Мбит</td><td class="p-3">HD на грани</td></tr>
+                <tr class="border-t" style="border-color:var(--frkn-border)"><td class="p-3 whitespace-nowrap">&lt; 5 Мбит</td><td class="p-3">веб и мессенджеры</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="text-frkn-muted text-xs mt-2">Плашка <b>gaming</b> появляется при пинге ≤ 60&nbsp;мс — играм важна задержка, а не ширина канала.</p>
+    </section>
+
+    <!-- 6. why numbers differ -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Почему цифры могут отличаться</h2>
+        <div class="frkn-card rounded-2xl p-4 text-sm leading-relaxed">
+            <ul class="space-y-2 list-disc pl-5">
+                <li><b>Включён VPN</b> — замер идёт через туннель и показывает путь до сервера, а не скорость вашего канала. Для честных цифр VPN лучше выключить.</li>
+                <li><b>Wi-Fi</b> — один и тот же канал на телефоне и по кабелю даёт разные цифры; помехи и стены заметно режут скорость.</li>
+                <li><b>Далёкий сервер</b> — чем дальше сервер, тем выше пинг и тем сильнее ограничение по скорости на длинных каналах.</li>
+                <li><b>«Нет связи»</b> — сервер работает, но ваш провайдер не пускает до него пакеты. Так бывает: порты и адреса фильтруются выборочно.</li>
+                <li><b>Нагрузка на сервер</b> — вечером на популярных серверах больше людей, скорость может быть ниже.</li>
+                <li><b>Браузер и расширения</b> — блокировщики и «ускорители» иногда вмешиваются в запросы; сравните с окном инкогнито.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- 7. leaks -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Проверка утечек</h2>
+        <div class="frkn-card rounded-2xl p-4 text-sm leading-relaxed space-y-2">
+            <p><b>IPv6 вне туннеля.</b> Многие VPN работают только по IPv4. Если у вас одновременно есть IPv6, часть трафика может уходить напрямую,
+                минуя VPN. Мы опрашиваем IPv6-only адрес: если он ответил, а VPN включён — предупреждаем.</p>
+            <p><b>WebRTC.</b> Технология для видеозвонков умеет сообщать ваш «внутренний» сетевой адрес. Иногда через неё виден адрес провайдера,
+                даже когда страница открыта через VPN. Мы собираем эти адреса и сравниваем с тем IP, который видит интернет.</p>
+            <p class="text-frkn-muted">Обе проверки выполняются только в вашем браузере. Адреса никуда не отправляются и не сохраняются.</p>
+        </div>
+    </section>
+
+    <footer class="mt-10 pt-5 text-xs text-frkn-muted" style="border-top:1px solid var(--frkn-border)">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <a href="/" class="no-underline" style="color:var(--frkn-accent2)">← Вернуться на страницу статуса</a>
+            <a href="https://github.com/frkn-dev" class="no-underline" style="color:var(--frkn-muted)">GitHub</a>
+        </div>
+    </footer>
+</div>
 </body>
 </html>
