@@ -1,7 +1,7 @@
 use crate::i18n::{detect_lang, save_lang, t, Lang};
 use crate::network::{
     check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_node_speed,
-    measure_speed, median, pool_title, FrknAggregateStatus, FrknNodeStatus, IpInfo,
+    measure_node_ping, measure_speed, median, pool_title, FrknAggregateStatus, FrknNodeStatus, IpInfo,
 };
 use std::collections::{HashMap, HashSet};
 use crate::services::ServiceStatus;
@@ -26,6 +26,9 @@ pub fn App() -> impl IntoView {
     // the pool currently selected, and who is being measured right now.
     let (bench_results, set_bench_results) = create_signal(HashMap::<String, f64>::new());
     let (bench_failed, set_bench_failed) = create_signal(HashSet::<String>::new());
+    // Round-trip latency per node (ms), measured next to the download so the row
+    // shows both the path quality and the throughput.
+    let (bench_ping, set_bench_ping) = create_signal(HashMap::<String, u32>::new());
     let (bench_pool, set_bench_pool) = create_signal(Option::<String>::None);
     let (bench_busy, set_bench_busy) = create_signal(Option::<String>::None);
     let (lang, set_lang) = create_signal(detect_lang());
@@ -119,6 +122,11 @@ pub fn App() -> impl IntoView {
     let bench_one = move |hostname: String| {
         set_bench_busy.set(Some(hostname.clone()));
         spawn_local(async move {
+            if let Some(ms) = measure_node_ping(&hostname).await {
+                set_bench_ping.update(|m| {
+                    m.insert(hostname.clone(), ms);
+                });
+            }
             match measure_node_speed(&hostname).await {
                 Ok(mbps) => {
                     set_bench_results.update(|m| {
@@ -168,6 +176,11 @@ pub fn App() -> impl IntoView {
                 return;
             }
             for h in hostnames {
+                if let Some(ms) = measure_node_ping(&h).await {
+                    set_bench_ping.update(|m| {
+                        m.insert(h.clone(), ms);
+                    });
+                }
                 match measure_node_speed(&h).await {
                     Ok(mbps) => {
                         set_bench_results.update(|m| {
@@ -515,7 +528,12 @@ pub fn App() -> impl IntoView {
                         let items = in_pool.into_iter().map(|node| {
                             let hn = node.hostname.clone();
                             let hn_btn = node.hostname.clone();
-                            let value = results.get(&hn).map(|v| format!("{:.0} {}", v, t(lang_now, "mbps")));
+                            let ping = bench_ping.get().get(&hn).copied();
+                            let value = results.get(&hn).map(|v| match ping {
+                                Some(ms) => format!("{:.0} {} · {} ms", v, t(lang_now, "mbps"), ms),
+                                None => format!("{:.0} {}", v, t(lang_now, "mbps")),
+                            });
+                            let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
                             let is_failed = failed.contains(&hn);
                             let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
                             // Some nodes carry the pool name as their label; fall

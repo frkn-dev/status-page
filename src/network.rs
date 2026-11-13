@@ -682,3 +682,18 @@ pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
     }
     Err("bench: node does not serve a speedtest file".to_string())
 }
+
+/// Round-trip latency from this device to one node's bench endpoint.
+///
+/// Uses the 1-byte `ping.txt` (a plain GET — a Range header would force a CORS
+/// preflight and double the measured time). Returns milliseconds.
+pub async fn measure_node_ping(hostname: &str) -> Option<u32> {
+    let url = format!("{}/speedtest/ping.txt?cb={}", bench_origin(hostname), now_ms() as u64);
+    let start = now_ms();
+    let res = gloo_net::http::Request::get(&url).send().await.ok()?;
+    if !res.ok() {
+        return None;
+    }
+    res.binary().await.ok()?;
+    Some((now_ms() - start).max(0.0) as u32)
+}
