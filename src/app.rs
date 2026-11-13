@@ -1,7 +1,7 @@
 use crate::i18n::{detect_lang, save_lang, t, Lang};
 use crate::network::{
     check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_node_speed,
-    measure_node_ping, measure_speed, pool_title, FrknAggregateStatus, FrknNodeStatus, IpInfo,
+    measure_node_ping, measure_speed, pool_title, probe_ipv6, probe_webrtc, FrknAggregateStatus, FrknNodeStatus, IpInfo,
 };
 use std::collections::HashMap;
 use crate::services::ServiceStatus;
@@ -63,6 +63,11 @@ pub fn App() -> impl IntoView {
     // Round-trip latency per node (ms), measured next to the download so the row
     // shows both the path quality and the throughput.
     let (bench_ping, set_bench_ping) = create_signal(HashMap::<String, u32>::new());
+    let (bench_jitter, set_bench_jitter) = create_signal(HashMap::<String, u32>::new());
+    // Leak probes: IPv6 reachability and WebRTC ICE candidates.
+    let (ipv6_addr, set_ipv6_addr) = create_signal(Option::<String>::None);
+    let (webrtc_ips, set_webrtc_ips) = create_signal(Vec::<String>::new());
+    let (leaks_checked, set_leaks_checked) = create_signal(false);
     let (bench_pool, set_bench_pool) = create_signal(Option::<String>::None);
     let (bench_busy, set_bench_busy) = create_signal(Option::<String>::None);
     // One speed card: summary by default, per-pool/per-node detail on demand.
@@ -132,6 +137,12 @@ pub fn App() -> impl IntoView {
             set_is_vpn.set(vpn_detected);
             set_frkn_loading.set(false);
             set_loading.set(false);
+
+            // Leak probes run in the background: they never block the page.
+            let (v6, rtc) = futures::join!(probe_ipv6(), probe_webrtc());
+            set_ipv6_addr.set(v6);
+            set_webrtc_ips.set(rtc);
+            set_leaks_checked.set(true);
         });
     };
 
@@ -158,9 +169,12 @@ pub fn App() -> impl IntoView {
     let bench_one = move |hostname: String| {
         set_bench_busy.set(Some(hostname.clone()));
         spawn_local(async move {
-            if let Some(ms) = measure_node_ping(&hostname).await {
+            if let Some((ms, jitter)) = measure_node_ping(&hostname).await {
                 set_bench_ping.update(|m| {
                     m.insert(hostname.clone(), ms);
+                });
+                set_bench_jitter.update(|m| {
+                    m.insert(hostname.clone(), jitter);
                 });
             }
             match measure_node_speed(&hostname).await {
@@ -217,9 +231,12 @@ pub fn App() -> impl IntoView {
                 let tasks = chunk.iter().map(|h| {
                     let h = h.clone();
                     async move {
-                        if let Some(ms) = measure_node_ping(&h).await {
+                        if let Some((ms, jitter)) = measure_node_ping(&h).await {
                             set_bench_ping.update(|m| {
                                 m.insert(h.clone(), ms);
+                            });
+                            set_bench_jitter.update(|m| {
+                                m.insert(h.clone(), jitter);
                             });
                         }
                         match measure_node_speed(&h).await {
@@ -338,11 +355,16 @@ pub fn App() -> impl IntoView {
             let hn = node.hostname.clone();
             let hn_btn = node.hostname.clone();
             let ping = bench_ping.get().get(&hn).copied();
-            let value = results.get(&hn).map(|v| match ping {
-                Some(ms) => format!("{:.0} {} · {} ms", v, t(lang_now, "mbps"), ms),
+            let jitter = bench_jitter.get().get(&hn).copied();
+            let ping_txt = ping.map(|ms| match jitter {
+                Some(j) if j > 0 => format!("{} ms ±{}", ms, j),
+                _ => format!("{} ms", ms),
+            });
+            let value = results.get(&hn).map(|v| match &ping_txt {
+                Some(p) => format!("{:.0} {} · {}", v, t(lang_now, "mbps"), p),
                 None => format!("{:.0} {}", v, t(lang_now, "mbps")),
             });
-            let value = value.or_else(|| ping.map(|ms| format!("{} ms", ms)));
+            let value = value.or(ping_txt);
             let fail_reason = failed.get(&hn).cloned();
             let row_busy = bench_busy.get().as_deref() == Some(hn.as_str());
             let quality = results.get(&hn).map(|v| t(lang_now, quality_key(*v)));
@@ -493,6 +515,65 @@ pub fn App() -> impl IntoView {
                     </div>
                 </div>
             </section>
+
+            // Leak checks: the two things a browser can prove about the tunnel.
+            {move || {
+                let lang_now = lang.get();
+                let my_ip = ip_info.get().map(|i| i.ip).unwrap_or_default();
+                let v6 = ipv6_addr.get();
+                let rtc = webrtc_ips.get();
+                let rtc_leak: Vec<String> = rtc
+                    .iter()
+                    .filter(|ip| ip.as_str() != my_ip && !ip.starts_with("10.") && !ip.starts_with("192.168.") && !ip.starts_with("172."))
+                    .cloned()
+                    .collect();
+                let vpn = is_vpn.get();
+                let v6_leak = vpn && v6.is_some();
+                let checked = leaks_checked.get();
+                Some(view! {
+                    <section class="mb-8">
+                        <div class="frkn-card rounded-2xl p-5">
+                            <h3 class="text-lg font-bold mb-3">{t(lang_now, "leaks_title")}</h3>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex items-center justify-between gap-3 p-2 rounded-lg bg-black/20 border border-frkn-border">
+                                    <div class="min-w-0">
+                                        <div class="truncate">{t(lang_now, "leak_ipv6")}</div>
+                                        {v6.clone().map(|a| view! { <div class="text-xs text-frkn-muted truncate">{a}</div> })}
+                                    </div>
+                                    <span class={if v6_leak { "text-xs shrink-0 text-amber-300" } else { "text-xs shrink-0 text-emerald-400" }}>
+                                        {if !checked {
+                                            t(lang_now, "checking").to_string()
+                                        } else if v6_leak {
+                                            t(lang_now, "leak_possible").to_string()
+                                        } else if v6.is_some() {
+                                            t(lang_now, "leak_no_vpn").to_string()
+                                        } else {
+                                            t(lang_now, "leak_ok").to_string()
+                                        }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between gap-3 p-2 rounded-lg bg-black/20 border border-frkn-border">
+                                    <div class="min-w-0">
+                                        <div class="truncate">{t(lang_now, "leak_webrtc")}</div>
+                                        {(!rtc.is_empty()).then(|| view! {
+                                            <div class="text-xs text-frkn-muted truncate">{rtc.join(", ")}</div>
+                                        })}
+                                    </div>
+                                    <span class={if !rtc_leak.is_empty() { "text-xs shrink-0 text-rose-400" } else { "text-xs shrink-0 text-emerald-400" }}>
+                                        {if !checked {
+                                            t(lang_now, "checking").to_string()
+                                        } else if rtc_leak.is_empty() {
+                                            t(lang_now, "leak_ok").to_string()
+                                        } else {
+                                            t(lang_now, "leak_found").to_string()
+                                        }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                })
+            }}
 
             // Speed test
             <section class="mb-10">

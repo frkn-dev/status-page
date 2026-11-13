@@ -697,7 +697,7 @@ pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
 ///
 /// Uses the 1-byte `ping.txt` (a plain GET — a Range header would force a CORS
 /// preflight and double the measured time). Returns milliseconds.
-pub async fn measure_node_ping(hostname: &str) -> Option<u32> {
+pub async fn measure_node_ping(hostname: &str) -> Option<(u32, u32)> {
     let origin = bench_origin(hostname);
     // Every request carries its own timeout: on a blocked path the browser's
     // default fetch timeout is tens of seconds, which made a whole pool run look
@@ -716,13 +716,61 @@ pub async fn measure_node_ping(hostname: &str) -> Option<u32> {
     // Warm DNS + TCP + TLS so the samples below are real round trips, not the
     // handshake (the cold request reads as 3-4x the path RTT).
     one(&format!("{origin}/speedtest/ping.txt?warm=1"), PING_TIMEOUT_MS).await?;
-    let mut best = u32::MAX;
+    let mut samples: Vec<u32> = Vec::new();
     for i in 0..3 {
         let url = format!("{origin}/speedtest/ping.txt?cb={}-{}", now_ms() as u64, i);
         let start = now_ms();
         one(&url, PING_TIMEOUT_MS).await?;
-        best = best.min((now_ms() - start).max(0.0) as u32);
+        samples.push((now_ms() - start).max(0.0) as u32);
     }
-    (best != u32::MAX).then_some(best)
+    let best = *samples.iter().min()?;
+    let worst = *samples.iter().max()?;
+    // spread of the three samples: the "is it stable for gaming" signal
+    Some((best, worst.saturating_sub(best)))
 }
 
+/// IPv6 reachability from this device. If it answers while the VPN only carries
+/// IPv4, that is the classic IPv6 leak: the traffic leaves the tunnel.
+pub async fn probe_ipv6() -> Option<String> {
+    let send_fut = gloo_net::http::Request::get("https://ipv6.icanhazip.com").send();
+    let resp = match select(Box::pin(send_fut), TimeoutFuture::new(4_000)).await {
+        Either::Left((Ok(r), _)) if r.ok() => r,
+        _ => return None,
+    };
+    let text = resp.text().await.ok()?;
+    let ip = text.trim().to_string();
+    if ip.contains(':') { Some(ip) } else { None }
+}
+
+/// IPs leaked by WebRTC ICE candidates (STUN). The browser may reveal the real
+/// provider address even when the page itself goes through the tunnel.
+pub async fn probe_webrtc() -> Vec<String> {
+    let js = r#"
+      (async () => {
+        const ips = new Set();
+        try {
+          const pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+          pc.onicecandidate = e => {
+            if (!e.candidate || !e.candidate.candidate) return;
+            const m = /([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{0,4}){2,7})/i.exec(e.candidate.candidate);
+            if (m) ips.add(m[1]);
+          };
+          pc.createDataChannel('probe');
+          await pc.setLocalDescription(await pc.createOffer());
+          await new Promise(r => setTimeout(r, 2500));
+          pc.close();
+        } catch (e) { /* no RTCPeerConnection: nothing to leak this way */ }
+        return JSON.stringify([...ips]);
+      })()
+    "#;
+    let promise = match js_sys::eval(js) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let value = match wasm_bindgen_futures::JsFuture::from(js_sys::Promise::from(promise)).await {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let raw = value.as_string().unwrap_or_default();
+    serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
+}
