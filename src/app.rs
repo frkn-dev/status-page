@@ -613,14 +613,21 @@ pub fn App() -> impl IntoView {
                                                 Some(hits) if hits.is_empty() => Some(view! {
                                                     <div class="text-xs text-amber-300">{t(lang_now, "leak_dns_none")}</div>
                                                 }),
-                                                Some(hits) => Some(view! {
-                                                    <div class="text-xs text-frkn-muted">
-                                                        {hits.iter().map(|h| {
-                                                            let tail = if h.country.is_empty() { h.ip.clone() } else { format!("{} ({}, {})", h.ip, h.country, h.org) };
-                                                            view! { <div class="truncate">{tail}</div> }
-                                                        }).collect_view()}
-                                                    </div>
-                                                }),
+                                                Some(hits) => {
+                                                    let exit_cc = ip_info.get().map(|i| i.country_code.to_uppercase()).unwrap_or_default();
+                                                    let off = !exit_cc.is_empty() && hits.iter().any(|h| !h.country.is_empty() && h.country.to_uppercase() != exit_cc);
+                                                    Some(view! {
+                                                        <div class="text-xs text-frkn-muted">
+                                                            {hits.iter().map(|h| {
+                                                                let tail = if h.country.is_empty() { h.ip.clone() } else { format!("{} ({}, {})", h.ip, h.country, h.org) };
+                                                                view! { <div class="truncate">{tail}</div> }
+                                                            }).collect_view()}
+                                                            <div class={if off { "text-amber-300" } else { "text-emerald-400" }}>
+                                                                {if off { t(lang_now, "leak_dns_foreign") } else { t(lang_now, "leak_ok") }}
+                                                            </div>
+                                                        </div>
+                                                    })
+                                                },
                                             }}
                                         </div>
                                         <button
