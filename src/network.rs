@@ -792,3 +792,103 @@ pub async fn probe_webrtc() -> Vec<String> {
     let raw = value.as_string().unwrap_or_default();
     serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
 }
+
+// ---------------------------------------------------------------- dns leak
+
+/// One resolver that asked our authoritative server for the probe name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DnsResolverHit {
+    pub ip: String,
+    pub country: String,
+    pub org: String,
+    pub seen: u32,
+}
+
+/// Zone delegated to our own logger (`dnsleak` on darkmachine2). The result API
+/// lives on `leak.beacon.frkn.org`, the probes on `*.<token>.leakprobe…`.
+const LEAK_RESULT: &str = "https://leak.beacon.frkn.org/r/";
+const LEAK_PROBE_ZONE: &str = "leakprobe.beacon.frkn.org";
+
+fn token_label() -> String {
+    // 10 chars from the clock: unique enough per run, no crypto needed
+    let mut n = (now_ms() as u64) ^ 0x9e37_79b9_7f4a_7c15;
+    let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut out = String::with_capacity(10);
+    for _ in 0..10 {
+        out.push(alphabet[(n % alphabet.len() as u64) as usize] as char);
+        n = n / 7 + 0x2545_f491;
+    }
+    out
+}
+
+/// Ask the browser to resolve five random names under our logger zone, then read
+/// back which resolvers were seen. The lookups themselves fail (nothing serves
+/// them), but the DNS query has already reached our server — that is the point.
+pub async fn dns_leak_probe() -> Result<Vec<DnsResolverHit>, String> {
+    let token = token_label();
+    for i in 0..5 {
+        let host = format!("q{i}{}.{token}.{LEAK_PROBE_ZONE}", (now_ms() as u64) % 100000);
+        // Image is the cheapest way to force a DNS lookup without CORS noise.
+        let _ = js_sys::eval(&format!(
+            "(() => {{ const im = new Image(); im.src = 'https://{host}/x'; }})()"
+        ));
+    }
+    TimeoutFuture::new(2_000).await;
+
+    let url = format!("{LEAK_RESULT}{token}");
+    let resp = match select(
+        Box::pin(gloo_net::http::Request::get(&url).send()),
+        TimeoutFuture::new(8_000),
+    )
+    .await
+    {
+        Either::Left((Ok(r), _)) => r,
+        Either::Left((Err(e), _)) => return Err(e.to_string()),
+        Either::Right(_) => return Err("timeout".to_string()),
+    };
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let list = json["resolvers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| DnsResolverHit {
+            ip: r["ip"].as_str().unwrap_or_default().to_string(),
+            country: r["country"].as_str().unwrap_or_default().to_string(),
+            org: r["org"].as_str().unwrap_or_default().to_string(),
+            seen: r["seen"].as_u64().unwrap_or(0) as u32,
+        })
+        .collect();
+    Ok(list)
+}
+
+// ---------------------------------------------------------------- mtu
+
+/// POST bodies of increasing size: detects an MTU/blackhole problem where pages
+/// open but large transfers hang (the classic "sites load, nothing downloads").
+/// Returns (size, delivered) per step.
+pub async fn mtu_probe() -> Vec<(usize, bool)> {
+    let body = "x".repeat(1600);
+    let mut out = Vec::new();
+    for size in [1200usize, 1400, 1500] {
+        let url = "https://leak.beacon.frkn.org/upload";
+        let fut = gloo_net::http::Request::post(url)
+            .header("Content-Type", "text/plain")
+            .body(body[..size].to_string())
+            .map_err(|e| e.to_string());
+        let ok = match fut {
+            Ok(req) => {
+                match select(Box::pin(req.send()), TimeoutFuture::new(8_000)).await {
+                    Either::Left((Ok(r), _)) => r.ok(),
+                    _ => false,
+                }
+            }
+            Err(_) => false,
+        };
+        out.push((size, ok));
+    }
+    out
+}

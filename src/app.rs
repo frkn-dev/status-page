@@ -1,7 +1,9 @@
 use crate::i18n::{detect_lang, save_lang, t, Lang};
 use crate::network::{
+    DnsResolverHit,
     check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_node_speed,
-    measure_node_ping, measure_speed, pool_title, probe_ipv6, probe_webrtc, FrknAggregateStatus, FrknNodeStatus, IpInfo,
+    dns_leak_probe, measure_node_ping, measure_speed, mtu_probe, pool_title, probe_ipv6, probe_webrtc,
+    FrknAggregateStatus, FrknNodeStatus, IpInfo,
 };
 use std::collections::HashMap;
 use crate::services::ServiceStatus;
@@ -68,6 +70,12 @@ pub fn App() -> impl IntoView {
     let (ipv6_addr, set_ipv6_addr) = create_signal(Option::<String>::None);
     let (webrtc_ips, set_webrtc_ips) = create_signal(Vec::<String>::new());
     let (leaks_checked, set_leaks_checked) = create_signal(false);
+    // DNS-leak probe: resolvers that actually asked our authoritative server.
+    let (dns_hits, set_dns_hits) = create_signal(Option::<Vec<DnsResolverHit>>::None);
+    let (dns_busy, set_dns_busy) = create_signal(false);
+    // MTU probe: (size, delivered) for 1200/1400/1500 bytes.
+    let (mtu_res, set_mtu_res) = create_signal(Option::<Vec<(usize, bool)>>::None);
+    let (mtu_busy, set_mtu_busy) = create_signal(false);
     let (bench_pool, set_bench_pool) = create_signal(Option::<String>::None);
     let (bench_busy, set_bench_busy) = create_signal(Option::<String>::None);
     // One speed card: summary by default, per-pool/per-node detail on demand.
@@ -147,6 +155,27 @@ pub fn App() -> impl IntoView {
     };
 
     run_checks();
+
+    let run_dns_check = move |_| {
+        set_dns_busy.set(true);
+        set_dns_hits.set(None);
+        spawn_local(async move {
+            match dns_leak_probe().await {
+                Ok(hits) => set_dns_hits.set(Some(hits)),
+                Err(_) => set_dns_hits.set(Some(Vec::new())),
+            }
+            set_dns_busy.set(false);
+        });
+    };
+
+    let run_mtu_check = move |_| {
+        set_mtu_busy.set(true);
+        set_mtu_res.set(None);
+        spawn_local(async move {
+            set_mtu_res.set(Some(mtu_probe().await));
+            set_mtu_busy.set(false);
+        });
+    };
 
     let run_speed_test = move |_| {
         set_is_speed_testing.set(true);
@@ -568,6 +597,64 @@ pub fn App() -> impl IntoView {
                                             t(lang_now, "leak_found").to_string()
                                         }}
                                     </span>
+                                </div>
+
+                                // DNS: which resolvers actually asked our authoritative probe zone
+                                <div class="p-2 rounded-lg bg-black/20 border border-frkn-border">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <div class="truncate">{t(lang_now, "leak_dns")}</div>
+                                            {match dns_hits.get() {
+                                                None => None,
+                                                Some(hits) if hits.is_empty() => Some(view! {
+                                                    <div class="text-xs text-amber-300">{t(lang_now, "leak_dns_none")}</div>
+                                                }),
+                                                Some(hits) => Some(view! {
+                                                    <div class="text-xs text-frkn-muted">
+                                                        {hits.iter().map(|h| {
+                                                            let tail = if h.country.is_empty() { h.ip.clone() } else { format!("{} ({}, {})", h.ip, h.country, h.org) };
+                                                            view! { <div class="truncate">{tail}</div> }
+                                                        }).collect_view()}
+                                                    </div>
+                                                }),
+                                            }}
+                                        </div>
+                                        <button
+                                            on:click=move |_| run_dns_check(())
+                                            disabled=dns_busy
+                                            class="shrink-0 px-3 py-1.5 rounded-lg bg-frkn-accent/20 border border-frkn-accent/30 text-xs font-semibold hover:bg-frkn-accent/30 transition disabled:opacity-50"
+                                        >
+                                            {move || if dns_busy.get() { t(lang.get(), "checking").to_string() } else { t(lang.get(), "leak_dns_run").to_string() }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                // MTU: pages open but large transfers hang -> sizes stop passing
+                                <div class="p-2 rounded-lg bg-black/20 border border-frkn-border">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <div class="truncate">{t(lang_now, "leak_mtu")}</div>
+                                            {match mtu_res.get() {
+                                                None => None,
+                                                Some(res) => Some(view! {
+                                                    <div class="text-xs text-frkn-muted">
+                                                        {res.into_iter().map(|(size, ok)| {
+                                                            let mark = if ok { "✓" } else { "✗" };
+                                                            let cls = if ok { "text-emerald-400" } else { "text-rose-400" };
+                                                            view! { <span class={format!("mr-2 {cls}")}>{format!("{size} {mark}")}</span> }
+                                                        }).collect_view()}
+                                                    </div>
+                                                }),
+                                            }}
+                                        </div>
+                                        <button
+                                            on:click=move |_| run_mtu_check(())
+                                            disabled=mtu_busy
+                                            class="shrink-0 px-3 py-1.5 rounded-lg bg-frkn-accent/20 border border-frkn-accent/30 text-xs font-semibold hover:bg-frkn-accent/30 transition disabled:opacity-50"
+                                        >
+                                            {move || if mtu_busy.get() { t(lang.get(), "checking").to_string() } else { t(lang.get(), "leak_mtu_run").to_string() }}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
