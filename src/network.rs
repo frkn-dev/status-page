@@ -835,33 +835,45 @@ pub async fn dns_leak_probe() -> Result<Vec<DnsResolverHit>, String> {
     }
     TimeoutFuture::new(2_000).await;
 
+    // The resolver chain needs a moment: poll instead of reading once, otherwise
+    // a slow upstream shows up as "no queries arrived".
     let url = format!("{LEAK_RESULT}{token}");
-    let resp = match select(
-        Box::pin(gloo_net::http::Request::get(&url).send()),
-        TimeoutFuture::new(8_000),
-    )
-    .await
-    {
-        Either::Left((Ok(r), _)) => r,
-        Either::Left((Err(e), _)) => return Err(e.to_string()),
-        Either::Right(_) => return Err("timeout".to_string()),
-    };
-    if !resp.ok() {
-        return Err(format!("HTTP {}", resp.status()));
+    let mut list: Vec<DnsResolverHit> = Vec::new();
+    for _ in 0..6 {
+        TimeoutFuture::new(1_200).await;
+        let resp = match select(
+            Box::pin(gloo_net::http::Request::get(&url).send()),
+            TimeoutFuture::new(6_000),
+        )
+        .await
+        {
+            Either::Left((Ok(r), _)) => r,
+            Either::Left((Err(e), _)) => return Err(e.to_string()),
+            Either::Right(_) => continue,
+        };
+        if !resp.ok() {
+            continue;
+        }
+        let json: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        list = json["resolvers"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| DnsResolverHit {
+                ip: r["ip"].as_str().unwrap_or_default().to_string(),
+                country: r["country"].as_str().unwrap_or_default().to_string(),
+                org: r["org"].as_str().unwrap_or_default().to_string(),
+                seen: r["seen"].as_u64().unwrap_or(0) as u32,
+            })
+            .collect();
+        if !list.is_empty() {
+            break;
+        }
     }
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let list = json["resolvers"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| DnsResolverHit {
-            ip: r["ip"].as_str().unwrap_or_default().to_string(),
-            country: r["country"].as_str().unwrap_or_default().to_string(),
-            org: r["org"].as_str().unwrap_or_default().to_string(),
-            seen: r["seen"].as_u64().unwrap_or(0) as u32,
-        })
-        .collect();
     Ok(list)
 }
 
