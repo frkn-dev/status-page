@@ -804,9 +804,11 @@ pub struct DnsResolverHit {
     pub seen: u32,
 }
 
-/// Zone delegated to our own logger (`dnsleak` on darkmachine2). The result API
-/// lives on `leak.beacon.frkn.org`, the probes on `*.<token>.leakprobe…`.
-const LEAK_RESULT: &str = "https://leak.beacon.frkn.org/r/";
+/// Probes go to `*.<token>.leakprobe.beacon.frkn.org`, a zone delegated to our own
+/// logger (`dnsleak` on darkmachine2). Its result API is exposed through
+/// api.frkn.org/leak/ — that host already has a certificate and CORS setup that the
+/// browser accepts (a fresh beacon name was rejected by Chrome in practice).
+const LEAK_RESULT: &str = "https://api.frkn.org/leak/r/";
 const LEAK_PROBE_ZONE: &str = "leakprobe.beacon.frkn.org";
 
 fn token_label() -> String {
@@ -886,7 +888,7 @@ pub async fn mtu_probe() -> Vec<(usize, bool)> {
     let body = "x".repeat(1600);
     let mut out = Vec::new();
     for size in [1200usize, 1400, 1500] {
-        let url = "https://leak.beacon.frkn.org/upload";
+        let url = "https://api.frkn.org/leak/upload";
         let fut = gloo_net::http::Request::post(url)
             .header("Content-Type", "text/plain")
             .body(body[..size].to_string())
