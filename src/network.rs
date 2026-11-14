@@ -56,6 +56,10 @@ pub struct FrknNode {
     pub pool: Option<String>,
     /// Localized pool titles (`[node] pool_translation`), lang -> title.
     pub pool_translation: Option<BTreeMap<String, String>>,
+    /// Bench base URL straight from the api (`speedtest_url`, 0.6.134+).
+    /// The api owns the name; the page never derives it. `None` = old api or a
+    /// node without a bench.
+    pub speedtest_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -129,7 +133,7 @@ pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
     }
 
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let nodes = json["response"]
+    let nodes: Vec<FrknNode> = json["response"]
         .as_array()
         .ok_or("invalid response format")?
         .iter()
@@ -145,6 +149,7 @@ pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
                     .as_array()
                     .map(|arr| arr.iter().filter_map(|p| p.as_u64().map(|v| v as u16)).collect())
                     .unwrap_or_default(),
+                speedtest_url: n["speedtest_url"].as_str().map(str::to_string),
                 pool: n["pool"].as_str().map(str::to_string),
                 pool_translation: n["pool_translation"].as_object().map(|m| {
                     m.iter()
@@ -154,6 +159,18 @@ pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
             })
         })
         .collect();
+
+    // Remember which node carries which bench URL: measure_* work from a
+    // hostname, and the URL must come from the api, never from the name.
+    BENCH_URLS.with(|m| {
+        let mut m = m.borrow_mut();
+        m.clear();
+        for n in &nodes {
+            if let Some(url) = &n.speedtest_url {
+                m.insert(n.hostname.clone(), url.clone());
+            }
+        }
+    });
 
     Ok(nodes)
 }
@@ -684,7 +701,18 @@ const BENCH_HOSTS: &[(&str, &str)] = &[
     ("msk-vdska.frkn.org", "vdska-ru-msk-bench-01"),
 ];
 
+thread_local! {
+    /// hostname -> bench base URL as reported by the api.
+    static BENCH_URLS: std::cell::RefCell<std::collections::HashMap<String, String>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 fn bench_origin(hostname: &str) -> String {
+    // 1. the api's value (single source of truth)
+    if let Some(url) = BENCH_URLS.with(|m| m.borrow().get(hostname).cloned()) {
+        return url;
+    }
+    // 2. local map, kept until api 0.6.134 is everywhere
     let label = BENCH_HOSTS
         .iter()
         .find(|(host, _)| *host == hostname)
