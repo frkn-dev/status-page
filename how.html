@@ -203,6 +203,20 @@
         </div>
     </section>
 
+    <!-- 8. reachability -->
+    <section class="mb-8">
+        <h2 class="text-lg font-bold mb-2">Про доступность серверов</h2>
+        <div class="frkn-card rounded-2xl p-4 text-sm leading-relaxed space-y-2">
+            <p>Строка «все серверы работают» — это состояние <b>на нашей стороне</b>: сервер запущен и присылает heartbeat.
+                Отвечает ли он <b>вам</b> — зависит от вашего провайдера, маршрута и фильтрации.</p>
+            <p>Поэтому рядом стоит вторая цифра: «N из M отвечают с вашего подключения». Это результат проверки из браузера —
+                именно то, что реально доходит до вас, а не «здоровье» сервера.</p>
+            <p class="text-frkn-muted">Часть протоколов из браузера не проверить (UDP: AmneziaWG, WireGuard, Hysteria2 — они работают
+                поверх UDP). Такие порты мы не красим в «недоступен»: их состояние с вашей стороны может отличаться от того,
+                что видит браузер.</p>
+        </div>
+    </section>
+
     <footer class="mt-10 pt-5 text-xs text-frkn-muted" style="border-top:1px solid var(--frkn-border)">
         <div class="flex items-center justify-between gap-3 flex-wrap">
             <a href="/" class="no-underline" style="color:var(--frkn-accent2)">← Вернуться на страницу статуса</a>
