@@ -663,8 +663,9 @@ pub fn median(values: &[f64]) -> Option<f64> {
 /// Per-node bench origin on the dedicated bench port. Names follow the zone
 /// template `<hoster>-<cc>-<city>-<purpose>-<nn>` (see `beacon.frkn.org`), so a
 /// node cannot be found by guessing its hostname: the map below is the source.
-/// Nodes without an entry fall back to the old `<first-label>.bench` scheme.
-/// The wildcard cert `*.bench.beacon.frkn.org` still covers every name.
+/// Nodes without an entry fall back to `<first-label>.bench`, the old scheme.
+/// The wildcard cert `*.bench.beacon.frkn.org` covers every name; the cert scope
+/// stays bench-only so a pool node cannot MITM premium H2 SNI or irc/chat.
 const BENCH_PORT: u16 = 19443;
 const BENCH_DOMAIN: &str = "bench.beacon.frkn.org";
 
