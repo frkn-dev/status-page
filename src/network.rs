@@ -679,53 +679,25 @@ pub fn median(values: &[f64]) -> Option<f64> {
     Some(if v.len() % 2 == 0 { (v[mid - 1] + v[mid]) / 2.0 } else { v[mid] })
 }
 
-/// Per-node bench origin on the dedicated bench port. Names follow the zone
-/// template `<hoster>-<cc>-<city>-<purpose>-<nn>` (see `beacon.frkn.org`), so a
-/// node cannot be found by guessing its hostname: the map below is the source.
-/// Nodes without an entry fall back to `<first-label>.bench`, the old scheme.
-/// The wildcard cert `*.bench.beacon.frkn.org` covers every name; the cert scope
-/// stays bench-only so a pool node cannot MITM premium H2 SNI or irc/chat.
-const BENCH_PORT: u16 = 19443;
-const BENCH_DOMAIN: &str = "bench.beacon.frkn.org";
-
-const BENCH_HOSTS: &[(&str, &str)] = &[
-    ("at.frkn.org", "mis-at-vie-bench-01"),
-    ("ee.frkn.org", "soul-ee-tll-bench-01"),
-    ("eu01.frkn.org", "ncr-nl-ams-bench-01"),
-    ("eu02.frkn.org", "aeza-nl-ams-bench-01"),
-    ("fr.frkn.org", "aeza-fr-par-bench-01"),
-    ("pl.frkn.org", "fbw-fr-par-bench-01"),
-    ("tr.frkn.org", "hk-tr-ist-bench-01"),
-    ("msk-tw.frkn.org", "tw-ru-msk-bench-01"),
-    ("msk-tw-nvsb.frkn.org", "adm-ru-nsk-bench-01"),
-    ("msk-vdska.frkn.org", "vdska-ru-msk-bench-01"),
-];
-
+/// Per-node bench origin, taken from the api (`nodes.bench_url` →
+/// `/status.speedtest_url`). The page does not derive bench names any more: they
+/// live in the beacon zone as `<hoster>-<cc>-<city>-bench-<nn>.bench...`, and
+/// neither provider nor city can be derived from the node hostname.
 thread_local! {
     /// hostname -> bench base URL as reported by the api.
     static BENCH_URLS: std::cell::RefCell<std::collections::HashMap<String, String>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-fn bench_origin(hostname: &str) -> String {
-    // 1. the api's value (single source of truth)
-    if let Some(url) = BENCH_URLS.with(|m| m.borrow().get(hostname).cloned()) {
-        return url;
-    }
-    // 2. local map, kept until api 0.6.134 is everywhere
-    let label = BENCH_HOSTS
-        .iter()
-        .find(|(host, _)| *host == hostname)
-        .map(|(_, label)| *label)
-        .unwrap_or_else(|| hostname.split('.').next().unwrap_or(hostname));
-    format!("https://{label}.{BENCH_DOMAIN}:{BENCH_PORT}")
+fn bench_origin(hostname: &str) -> Option<String> {
+    BENCH_URLS.with(|m| m.borrow().get(hostname).cloned())
 }
 
 /// Speed from THIS device to one node, downloading its bench file directly.
 /// Measures the user's own path to that node, not a third-party mirror.
 pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
     let ts = now_ms() as u64;
-    let origin = bench_origin(hostname);
+    let origin = bench_origin(hostname).ok_or_else(|| "no bench".to_string())?;
     // Probe with 1 MB: a 10 MB body times out on slow links and only doubles the
     // wait. Switch to 10 MB only when 1 MB arrived fast enough for the bigger
     // sample to be accurate instead of just slow.
@@ -746,7 +718,7 @@ pub async fn measure_node_speed(hostname: &str) -> Result<f64, String> {
 /// Uses the 1-byte `ping.txt` (a plain GET — a Range header would force a CORS
 /// preflight and double the measured time). Returns milliseconds.
 pub async fn measure_node_ping(hostname: &str) -> Option<(u32, u32)> {
-    let origin = bench_origin(hostname);
+    let origin = bench_origin(hostname)?;
     // Every request carries its own timeout: on a blocked path the browser's
     // default fetch timeout is tens of seconds, which made a whole pool run look
     // hung (ping has no deadline of its own).
