@@ -123,7 +123,13 @@ impl FrknAggregateStatus {
 }
 
 pub async fn fetch_frkn_nodes() -> Result<Vec<FrknNode>, String> {
-    let resp = Request::get("https://api.frkn.org/status")
+    // Cache-buster: the api sends no Cache-Control, and a heuristically cached
+    // response would keep the page on a previous shape (it did — speedtest_url
+    // stayed missing after the api was upgraded).
+    let resp = Request::get(&format!(
+        "https://api.frkn.org/status?t={}",
+        js_sys::Date::now() as u64
+    ))
         .send()
         .await
         .map_err(|e| e.to_string())?;
