@@ -170,54 +170,53 @@ pub async fn check_frkn_nodes(nodes: &[FrknNode]) -> (FrknAggregateStatus, Vec<F
         .filter(|n| n.node_type != "PremiumNode")
         .collect();
 
-    let node_futures = checkable_nodes.into_iter().map(|node| async move {
-        let url = format!("https://{}/favicon.ico", node.hostname);
-        let (favicon_status, favicon_latency) = check_frkn_node(&url).await;
-        let port_futures = node.ports.iter().map(|&port| async move {
-            let (p_status, p_latency) = check_port(&node.hostname, port).await;
-            FrknPortStatus {
-                port,
-                browser_status: p_status,
-                latency_ms: p_latency,
+    // One port per node and 8 nodes at a time: with ~100 sockets in flight the
+    // browser queues connections and the deadline fires on untouched sockets,
+    // which showed a different set of nodes as "not answering" on every run.
+    let mut statuses: Vec<FrknNodeStatus> = Vec::new();
+    for chunk in checkable_nodes.chunks(16) {
+        let futures = chunk.iter().map(|node| async move {
+            let url = format!("https://{}/favicon.ico", node.hostname);
+            let (favicon_status, favicon_latency) = check_frkn_node(&url).await;
+            let ports: Vec<FrknPortStatus> = match node.ports.first() {
+                Some(&port) => {
+                    let (p_status, p_latency) = check_port(&node.hostname, port).await;
+                    vec![FrknPortStatus { port, browser_status: p_status, latency_ms: p_latency }]
+                }
+                None => Vec::new(),
+            };
+
+            let answered = ports
+                .iter()
+                .any(|p| p.browser_status == ServiceStatus::Online);
+            let (browser_status, latency_ms) = if answered {
+                let p_latency = ports.iter().filter_map(|p| p.latency_ms).min();
+                (ServiceStatus::Online, p_latency.or(favicon_latency))
+            } else if favicon_status == ServiceStatus::Online {
+                (ServiceStatus::Online, favicon_latency)
+            } else {
+                // Nothing answered — but api may still report Online; the UI shows
+                // both, so this is "silent from here", not "down".
+                (ServiceStatus::Offline, None)
+            };
+
+            FrknNodeStatus {
+                label: node.label.clone(),
+                hostname: node.hostname.clone(),
+                address: node.address.clone(),
+                country: node.country.clone(),
+                api_status: node.api_status.clone(),
+                node_type: node.node_type.clone(),
+                browser_status,
+                latency_ms,
+                ports,
+                pool: node.pool.clone(),
+                pool_translation: node.pool_translation.clone(),
             }
         });
-        let ports = join_all(port_futures).await;
+        statuses.extend(join_all(futures).await);
+    }
 
-        // Общий статус ноды = online, если доступен хотя бы один порт
-        // или отвечает HTTP/фавикон. Favicon часто не отдаётся на Reality-нодах,
-        // поэтому порты являются более надёжным критерием. UDP-порты (AWG)
-        // из браузера не проверить — они почти всегда будут offline.
-        let port_online = ports
-            .iter()
-            .any(|p| p.browser_status == ServiceStatus::Online);
-        let (browser_status, latency_ms) = if port_online {
-            let p_latency = ports
-                .iter()
-                .filter_map(|p| p.latency_ms)
-                .min();
-            (ServiceStatus::Online, p_latency.or(favicon_latency))
-        } else if favicon_status == ServiceStatus::Online {
-            (ServiceStatus::Online, favicon_latency)
-        } else {
-            (ServiceStatus::Offline, None)
-        };
-
-        FrknNodeStatus {
-            label: node.label.clone(),
-            hostname: node.hostname.clone(),
-            address: node.address.clone(),
-            country: node.country.clone(),
-            api_status: node.api_status.clone(),
-            node_type: node.node_type.clone(),
-            browser_status,
-            latency_ms,
-            ports,
-            pool: node.pool.clone(),
-            pool_translation: node.pool_translation.clone(),
-        }
-    });
-
-    let mut statuses = join_all(node_futures).await;
 
     // Проверяем api.frkn.org отдельно через публичный /healthcheck
     let api_url = "https://api.frkn.org/healthcheck";
@@ -269,6 +268,9 @@ async fn check_frkn_node(url: &str) -> (ServiceStatus, Option<u32>) {
 /// до таймаута — это означает, что порт достижим. Если порт закрыт
 /// или блокируется, браузер дождётся таймаута.
 async fn check_port(hostname: &str, port: u16) -> (ServiceStatus, Option<u32>) {
+    // A browser cannot tell "closed" from "filtered": both can end in onerror,
+    // and a queued socket can simply miss a short deadline. So the result is
+    // "answered within the deadline" or "silent" — never "unavailable".
     let url = format!("wss://{}:{}/", hostname, port);
     let start = now_ms();
     let ws = match web_sys::WebSocket::new(&url) {
@@ -291,7 +293,7 @@ async fn check_port(hostname: &str, port: u16) -> (ServiceStatus, Option<u32>) {
 
     let tx_timeout = tx.clone();
     spawn_local(async move {
-        TimeoutFuture::new(4_000).await;
+        TimeoutFuture::new(6_000).await;
         if let Some(t) = tx_timeout.borrow_mut().take() {
             let _ = t.send(false);
         }
@@ -811,7 +813,7 @@ pub struct DnsResolverHit {
 const LEAK_RESULT: &str = "https://api.frkn.org/leak/r/";
 const LEAK_PROBE_ZONE: &str = "leakprobe.beacon.frkn.org";
 
-fn token_label() -> String {
+pub fn probe_token() -> String {
     // 10 chars from the clock: unique enough per run, no crypto needed
     let mut n = (now_ms() as u64) ^ 0x9e37_79b9_7f4a_7c15;
     let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789";
@@ -826,8 +828,32 @@ fn token_label() -> String {
 /// Ask the browser to resolve five random names under our logger zone, then read
 /// back which resolvers were seen. The lookups themselves fail (nothing serves
 /// them), but the DNS query has already reached our server — that is the point.
-pub async fn dns_leak_probe() -> Result<Vec<DnsResolverHit>, String> {
-    let token = token_label();
+/// What a neutral resolver sees for our own canary. Our authoritative server
+/// answers 127.0.0.1 for every probe name; if Google's DoH says something else,
+/// the answer was rewritten on the way (fake-ip / DNS hijack).
+pub async fn doh_canary(token: &str) -> Result<Vec<String>, String> {
+    let url = format!(
+        "https://dns.google/resolve?name=canary.{token}.{LEAK_PROBE_ZONE}&type=A"
+    );
+    let resp = gloo_net::http::Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(json["Answer"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|a| a["type"].as_u64() == Some(1))
+        .filter_map(|a| a["data"].as_str().map(str::to_string))
+        .collect())
+}
+
+pub async fn dns_leak_probe(token: &str) -> Result<Vec<DnsResolverHit>, String> {
     for i in 0..5 {
         let host = format!("q{i}{}.{token}.{LEAK_PROBE_ZONE}", (now_ms() as u64) % 100000);
         // Image is the cheapest way to force a DNS lookup without CORS noise.

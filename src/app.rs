@@ -2,7 +2,7 @@ use crate::i18n::{detect_lang, save_lang, t, Lang};
 use crate::network::{
     DnsResolverHit,
     check_frkn_nodes, detect_vpn, fetch_frkn_nodes, fetch_ip_info, is_frkn_ip, measure_node_speed,
-    dns_leak_probe, measure_node_ping, measure_speed, mtu_probe, pool_title, probe_ipv6, probe_webrtc,
+    dns_leak_probe, doh_canary, measure_node_ping, probe_token, measure_speed, mtu_probe, pool_title, probe_ipv6, probe_webrtc,
     FrknAggregateStatus, FrknNodeStatus, IpInfo,
 };
 use std::collections::HashMap;
@@ -73,6 +73,8 @@ pub fn App() -> impl IntoView {
     // DNS-leak probe: resolvers that actually asked our authoritative server.
     let (dns_hits, set_dns_hits) = create_signal(Option::<Vec<DnsResolverHit>>::None);
     let (dns_busy, set_dns_busy) = create_signal(false);
+    // Verdict of the canary: what a neutral DoH resolver says about our zone.
+    let (dns_doh, set_dns_doh) = create_signal(Option::<Vec<String>>::None);
     // MTU probe: (size, delivered) for 1200/1400/1500 bytes.
     let (mtu_res, set_mtu_res) = create_signal(Option::<Vec<(usize, bool)>>::None);
     let (mtu_busy, set_mtu_busy) = create_signal(false);
@@ -162,13 +164,18 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             // Hard ceiling: the UI must leave "Checking..." no matter what the
             // resolver chain does.
-            let res = select(Box::pin(dns_leak_probe()), TimeoutFuture::new(30_000)).await;
+            let token = probe_token();
+            let res = select(Box::pin(dns_leak_probe(&token)), TimeoutFuture::new(30_000)).await;
             let hits = match res {
                 Either::Left((Ok(v), _)) => v,
                 _ => Vec::new(),
             };
             set_dns_hits.set(Some(hits));
             set_dns_busy.set(false);
+            // Same token, neutral resolver: a rewritten answer here means DNS tampering.
+            if let Ok(ips) = doh_canary(&token).await {
+                set_dns_doh.set(Some(ips));
+            }
         });
     };
 
@@ -625,6 +632,17 @@ pub fn App() -> impl IntoView {
                                                             <div class={if off { "text-amber-300" } else { "text-emerald-400" }}>
                                                                 {if off { t(lang_now, "leak_dns_foreign") } else { t(lang_now, "leak_ok") }}
                                                             </div>
+                                                            {match dns_doh.get() {
+                                                                None => None,
+                                                                Some(ips) if ips.iter().any(|ip| ip == "127.0.0.1") => Some(view! {
+                                                                    <div class="text-emerald-400">{t(lang_now, "leak_dns_doh_ok")}</div>
+                                                                }),
+                                                                Some(ips) => Some(view! {
+                                                                    <div class="text-amber-300">
+                                                                        {format!("{} {}", t(lang_now, "leak_dns_doh_bad"), ips.join(", "))}
+                                                                    </div>
+                                                                }),
+                                                            }}
                                                         </div>
                                                     })
                                                 },
@@ -854,11 +872,26 @@ pub fn App() -> impl IntoView {
                                                 <div class="p-3 rounded-xl bg-white/[0.03] border border-frkn-border">
                                                     <div class="flex items-center justify-between gap-2">
                                                         <div class="flex items-center gap-2 min-w-0">
-                                                            <span class="text-sm font-medium truncate">{node.label}</span>
+                                                            {
+                                                                // RU/Gaming nodes carry the pool name as their label,
+                                                                // so three rows read "RU Рилзопровод". Fall back to the
+                                                                // hostname whenever the label repeats the pool id.
+                                                                let pool_id = node.pool.clone().unwrap_or_default();
+                                                                let name = if node.label.is_empty() || node.label == pool_id {
+                                                                    node.hostname.clone()
+                                                                } else {
+                                                                    node.label.clone()
+                                                                };
+                                                                view! { <span class="text-sm font-medium truncate">{name}</span> }
+                                                            }
                                                             <span class="text-xs text-frkn-muted shrink-0">{node.country}</span>
                                                         </div>
-                                                        <span class={format!("text-xs font-semibold shrink-0 {}", status_class)}>
-                                                            {node.browser_status.label_for(node_lang)}
+                                                        <span class={format!("text-xs font-semibold shrink-0 {}", if node.browser_status == ServiceStatus::Offline && node.api_status == "Online" { "text-frkn-muted" } else { status_class })}>
+                                                            {if node.browser_status == ServiceStatus::Offline && node.api_status == "Online" {
+                                                                t(node_lang, "silent_from_here").to_string()
+                                                            } else {
+                                                                node.browser_status.label_for(node_lang).to_string()
+                                                            }}
                                                         </span>
                                                     </div>
                                                     <div class="mt-1 flex items-center flex-wrap gap-2">
@@ -870,9 +903,11 @@ pub fn App() -> impl IntoView {
                                                         Some(view! {
                                                             <div class="mt-2 flex flex-wrap gap-2">
                                                                 {node.ports.into_iter().map(|p| {
+                                                                    // grey = did not answer (cannot be told apart from
+                                                                    // closed in a browser), not "port is down"
                                                                     let dot_class = match p.browser_status {
                                                                         ServiceStatus::Online => "bg-emerald-400",
-                                                                        _ => "bg-rose-400",
+                                                                        _ => "bg-frkn-muted/40",
                                                                     };
                                                                     view! {
                                                                         <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-black/20 border border-frkn-border">
