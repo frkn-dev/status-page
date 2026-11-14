@@ -160,10 +160,14 @@ pub fn App() -> impl IntoView {
         set_dns_busy.set(true);
         set_dns_hits.set(None);
         spawn_local(async move {
-            match dns_leak_probe().await {
-                Ok(hits) => set_dns_hits.set(Some(hits)),
-                Err(_) => set_dns_hits.set(Some(Vec::new())),
-            }
+            // Hard ceiling: the UI must leave "Checking..." no matter what the
+            // resolver chain does.
+            let res = select(Box::pin(dns_leak_probe()), TimeoutFuture::new(30_000)).await;
+            let hits = match res {
+                Either::Left((Ok(v), _)) => v,
+                _ => Vec::new(),
+            };
+            set_dns_hits.set(Some(hits));
             set_dns_busy.set(false);
         });
     };

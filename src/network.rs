@@ -841,23 +841,16 @@ pub async fn dns_leak_probe() -> Result<Vec<DnsResolverHit>, String> {
     // a slow upstream shows up as "no queries arrived".
     let url = format!("{LEAK_RESULT}{token}");
     let mut list: Vec<DnsResolverHit> = Vec::new();
-    // Resolvers behind a tunnel can take 10+ s to surface: poll long enough.
-    for _ in 0..12 {
+    for _ in 0..8 {
         TimeoutFuture::new(1_500).await;
-        let resp = match select(
-            Box::pin(gloo_net::http::Request::get(&url).send()),
-            TimeoutFuture::new(6_000),
-        )
-        .await
-        {
-            Either::Left((Ok(r), _)) => r,
-            Either::Left((Err(e), _)) => return Err(e.to_string()),
-            Either::Right(_) => continue,
+        let req = match gloo_net::http::Request::get(&url).send().await {
+            Ok(r) => r,
+            Err(_) => continue,
         };
-        if !resp.ok() {
+        if !req.ok() {
             continue;
         }
-        let json: serde_json::Value = match resp.json().await {
+        let json: serde_json::Value = match req.json().await {
             Ok(v) => v,
             Err(_) => continue,
         };
