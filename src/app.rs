@@ -8,7 +8,7 @@ use crate::network::{
 use std::collections::HashMap;
 use crate::services::ServiceStatus;
 use leptos::*;
-use futures::future::join_all;
+use futures::future::{join_all, select, Either};
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 
